@@ -85,6 +85,12 @@ export async function initDb(): Promise<void> {
       created_at INTEGER DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at INTEGER DEFAULT (unixepoch())
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
@@ -231,4 +237,20 @@ export function cancelFollowUpsOnReply(phone: string) {
 export function purgeOldMessages(days = 90) {
   const cutoff = Math.floor(Date.now() / 1000) - days * 86400;
   getDb().prepare('DELETE FROM messages WHERE created_at < ?').run(cutoff);
+}
+
+// ─── Settings (modo ausência, etc.) ──────────────────────────────────────────
+
+export function getSetting(key: string): string | null {
+  const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as any;
+  return row?.value || null;
+}
+
+export function setSetting(key: string, value: string | null) {
+  if (value === null) {
+    getDb().prepare('DELETE FROM settings WHERE key = ?').run(key);
+  } else {
+    getDb().prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, unixepoch())')
+      .run(key, value);
+  }
 }

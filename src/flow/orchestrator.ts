@@ -1,5 +1,5 @@
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply } from '../memory/db';
+import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -20,8 +20,18 @@ interface IncomingMessage {
   io: any;
 }
 
+// Palavras-chave de reclamação para gerar alerta prioritário
+const RECLAMACAO_KEYWORDS = [
+  'insatisfeito', 'insatisfeita', 'insatisfação', 'reclamação', 'reclamar',
+  'indignado', 'indignada', 'absurdo', 'inadmissível', 'vergonha',
+  'não anda', 'não andou', 'parado', 'sem notícias', 'sem informação',
+  'meses sem', 'abandonado', 'abandonaram', 'descaso', 'negligência',
+  'vou processar', 'vou reclamar', 'oab', 'denúncia',
+];
+
 export async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
-  const { phone, body, mediaUrl, messageType, io } = msg;
+  const { phone, io } = msg;
+  let { body, mediaUrl, messageType } = msg;
 
   try {
     // 1. Blacklist
@@ -30,15 +40,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // 2. Cancela follow-ups com condição 'reply' ao receber resposta do cliente
     cancelFollowUpsOnReply(phone);
 
-    // 3. Verifica horário de atendimento
-    if (!isWithinBusinessHours()) {
-      await sendMessage(phone, MSG_FORA_HORARIO);
-      saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-      io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
-      return;
-    }
-
-    // 4. Sessão existente
+    // 3. Sessão existente
     const session = getSession(phone);
 
     if (session?.status === 'takeover') {
@@ -49,21 +51,39 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     if (session?.status === 'pausado') return;
 
-    // 5. Transcreve áudio se necessário
+    // 4. Transcreve áudio se necessário (antes de salvar)
     let textBody = body;
     if (messageType === 'audio' || messageType === 'ptt') {
       if (mediaUrl) {
         textBody = await transcribeAudio(mediaUrl);
         io?.emit('transcription', { phone, original: mediaUrl, transcribed: textBody });
       } else {
-        textBody = '[Áudio não transcrito — sem URL de mídia]';
+        textBody = '[Áudio recebido — sem URL de mídia]';
       }
     }
 
+    // 5. SEMPRE salva a mensagem do cliente e emite para o painel
     saveMessage(phone, 'client', textBody, mediaUrl);
     io?.emit('message', { phone, role: 'client', body: textBody, mediaUrl, timestamp: Date.now() });
 
-    // 6. Detecta urgência
+    // 6. Modo ausência (Wesley em férias / feriado)
+    const ausenciaMsg = getSetting('ausencia_msg');
+    if (ausenciaMsg) {
+      await sendMessage(phone, ausenciaMsg);
+      saveMessage(phone, 'iara', ausenciaMsg);
+      io?.emit('message', { phone, role: 'iara', body: ausenciaMsg, timestamp: Date.now() });
+      return;
+    }
+
+    // 7. Verifica horário de atendimento
+    if (!isWithinBusinessHours()) {
+      await sendMessage(phone, MSG_FORA_HORARIO);
+      saveMessage(phone, 'iara', MSG_FORA_HORARIO);
+      io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+      return;
+    }
+
+    // 8. Detecta urgência
     const urgencyKeywords = ['urgente', 'urgência', 'preso', 'presa', 'mandado', 'busca e apreensão', 'acidente', 'socorro', 'emergência'];
     const isUrgent = urgencyKeywords.some(k => textBody.toLowerCase().includes(k));
     if (isUrgent) {
@@ -74,17 +94,28 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
-    // 7. Detecta pedido para falar com advogado
+    // 9. Detecta reclamação e alerta Wesley com prioridade
+    const isReclamacao = RECLAMACAO_KEYWORDS.some(k => textBody.toLowerCase().includes(k));
+    if (isReclamacao) {
+      io?.emit('alert', {
+        phone,
+        type: 'RECLAMAÇÃO',
+        message: `⚠️ Cliente insatisfeito: ${session?.name || phone} — "${textBody.slice(0, 80)}..."`,
+        priority: 'high',
+      });
+    }
+
+    // 10. Detecta pedido para falar com advogado
     const pedidoAdvogado = /(falar|fala|quero|preciso).*(advogado|doutor|dr|wesley)/i.test(textBody);
 
-    // 8. Lookup de identidade
+    // 11. Lookup de identidade
     const sheetsContact = await lookupSheets(phone);
     const trelloContact = sheetsContact ? null : await lookupTrello(phone);
     const contact = sheetsContact || trelloContact;
 
     const customInstruction = getContactInstruction(phone);
 
-    // 9. Classificação via Claude Haiku
+    // 12. Classificação via Claude Haiku
     const classification = await classifyContact({
       phone,
       found: !!contact,
@@ -185,9 +216,9 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
     await sendMessage(phone, draft);
     saveMessage(phone, 'iara', draft);
     io?.emit('message', { phone, role: 'iara', body: draft, timestamp: Date.now() });
+    // Só detecta agendamento em mensagens realmente enviadas (não em rascunhos de treino)
+    detectAppointment(phone, draft, contactName, io).catch(() => {});
   }
-
-  detectAppointment(phone, draft, contactName, io).catch(() => {});
 }
 
 function isWithinBusinessHours(): boolean {

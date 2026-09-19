@@ -1,4 +1,4 @@
-import { getDueFollowUps, markFollowUpSent, getDueFollowUpsV2, rescheduleFollowUpV2, updateFollowUpV2Status } from '../memory/db';
+import { getDueFollowUps, markFollowUpSent, getDueFollowUpsV2, rescheduleFollowUpV2, updateFollowUpV2Status, saveMessage } from '../memory/db';
 import { sendMessage } from '../responder/send';
 
 export async function cronFollowUps(): Promise<void> {
@@ -28,6 +28,7 @@ export async function cronFollowUps(): Promise<void> {
 
     try {
       await sendMessage(fu.phone, fu.message);
+      saveMessage(fu.phone, 'iara', fu.message);
       console.log(`[cron-followup] v2 enviado para ${fu.phone}`);
 
       if (fu.recurrence_days > 0) {

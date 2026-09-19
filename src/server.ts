@@ -52,10 +52,9 @@ io.on('connection', (socket) => {
 const TZ = process.env.TZ_APP || 'America/Sao_Paulo';
 
 // Cron jobs
-cron.schedule('0 8 * * 1-5', () => cronAudiencias(), { timezone: TZ });   // seg-sex 08h
-cron.schedule('0 9 * * 5', () => cronAudiencias(), { timezone: TZ });      // sexta 09h (2º aviso semana)
+cron.schedule('0 8 * * 1-5', () => cronAudiencias(), { timezone: TZ });   // seg-sex 08h (audiências + prazos)
 cron.schedule('0 8 * * 1-5', () => cronPrazos(), { timezone: TZ });        // seg-sex 08h
-cron.schedule('0 * * * *', () => cronFollowUps(), { timezone: TZ });       // hourly follow-ups
+cron.schedule('0 * * * *', () => cronFollowUps(), { timezone: TZ });       // a cada hora
 
 async function main() {
   await initDb();

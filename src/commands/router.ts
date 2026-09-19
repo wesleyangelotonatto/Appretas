@@ -5,10 +5,10 @@ import {
   saveMessage, upsertSession, getHistory, scheduleFollowUp,
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
+  getSetting, setSetting,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
-import { saveConversationSummary } from '../integrations/drive';
 
 export const commandRouter = Router();
 
@@ -142,6 +142,32 @@ commandRouter.post('/followup/:id/pause', (req: Request, res: Response) => {
   const { status } = req.body; // 'pausado' ou 'ativo'
   updateFollowUpV2Status(parseInt(req.params.id), status || 'pausado');
   req.app.locals.io?.emit('followup_updated', { id: req.params.id, status });
+  res.json({ ok: true });
+});
+
+// ─── Modo Ausência ────────────────────────────────────────────────────────────
+
+// GET /command/ausencia — retorna estado atual
+commandRouter.get('/ausencia', (_req, res) => {
+  const msg = getSetting('ausencia_msg');
+  res.json({ ativo: !!msg, mensagem: msg || '' });
+});
+
+// POST /command/ausencia — ativa modo ausência com mensagem personalizada
+commandRouter.post('/ausencia', (req: Request, res: Response) => {
+  const { mensagem } = req.body;
+  if (!mensagem) return res.status(400).json({ error: 'Informe a mensagem de ausência' });
+  setSetting('ausencia_msg', mensagem);
+  req.app.locals.io?.emit('ausencia_update', { ativo: true, mensagem });
+  console.log('[ausencia] modo ausência ATIVADO');
+  res.json({ ok: true, mensagem });
+});
+
+// DELETE /command/ausencia — desativa modo ausência
+commandRouter.delete('/ausencia', (req: Request, res: Response) => {
+  setSetting('ausencia_msg', null);
+  req.app.locals.io?.emit('ausencia_update', { ativo: false });
+  console.log('[ausencia] modo ausência DESATIVADO');
   res.json({ ok: true });
 });
 

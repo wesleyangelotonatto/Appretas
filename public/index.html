@@ -128,6 +128,7 @@
   <div class="status-dot" id="conn-dot" style="background:var(--red)"></div>
   <h1>🌿 Iara — Secretária Virtual</h1>
   <span id="mode-badge" class="mode-badge">MODO TREINO</span>
+  <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">🌴 Ausência</button>
   <div class="integration-status">
     <div class="int-item"><div class="int-dot ok" id="dot-waspeed"></div> Waspeed</div>
     <div class="int-item"><div class="int-dot ok" id="dot-trello"></div> Trello</div>
@@ -135,6 +136,21 @@
     <div class="int-item"><div class="int-dot ok" id="dot-drive"></div> Drive</div>
   </div>
 </header>
+
+<!-- Modal Ausência -->
+<div class="modal-overlay" id="modal-ausencia">
+  <div class="modal">
+    <h3>🌴 Modo Ausência</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Enquanto ativo, Iara responde com esta mensagem para TODOS os contatos, independente de horário.</p>
+    <label>Mensagem de ausência</label>
+    <textarea id="ausencia-msg" rows="4" placeholder="Ex: Estou em férias até 30/09. Para emergências, ligue (44) 98859-6158. Retorno imediatamente após."></textarea>
+    <div class="modal-actions">
+      <button class="btn" style="background:var(--surface2)" onclick="closeAusenciaModal()">Cancelar</button>
+      <button class="btn" style="background:#c0392b;color:#fff" onclick="desativarAusencia()" id="btn-desativar-ausencia">Desativar</button>
+      <button class="btn btn-followup" onclick="ativarAusencia()">Ativar Ausência</button>
+    </div>
+  </div>
+</div>
 
 <div class="main">
 
@@ -598,6 +614,56 @@
   }
 
   // Fecha modal ao clicar fora
+  // ─── Modo Ausência ────────────────────────────────────────────────────────
+  let ausenciaAtiva = false;
+
+  async function checkAusencia() {
+    try {
+      const r = await fetch('/command/ausencia');
+      const d = await r.json();
+      ausenciaAtiva = d.ativo;
+      updateAusenciaBtn();
+      if (d.mensagem) document.getElementById('ausencia-msg').value = d.mensagem;
+    } catch(e) {}
+  }
+
+  function updateAusenciaBtn() {
+    const btn = document.getElementById('btn-ausencia');
+    if (ausenciaAtiva) {
+      btn.style.background = '#c0392b'; btn.style.borderColor = '#c0392b'; btn.style.color = '#fff';
+      btn.textContent = '🔴 AUSÊNCIA ATIVA';
+    } else {
+      btn.style.background = '#2d1a00'; btn.style.borderColor = '#e67e22'; btn.style.color = '#e67e22';
+      btn.textContent = '🌴 Ausência';
+    }
+  }
+
+  function toggleAusencia() { document.getElementById('modal-ausencia').classList.add('open'); }
+  function closeAusenciaModal() { document.getElementById('modal-ausencia').classList.remove('open'); }
+
+  async function ativarAusencia() {
+    const msg = document.getElementById('ausencia-msg').value.trim();
+    if (!msg) return alert('Informe a mensagem de ausência');
+    await fetch('/command/ausencia', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensagem:msg})});
+    ausenciaAtiva = true; updateAusenciaBtn(); closeAusenciaModal();
+    addLog('Modo ausência ATIVADO');
+  }
+
+  async function desativarAusencia() {
+    await fetch('/command/ausencia', {method:'DELETE'});
+    ausenciaAtiva = false; updateAusenciaBtn(); closeAusenciaModal();
+    addLog('Modo ausência DESATIVADO');
+  }
+
+  socket.on('ausencia_update', (data) => {
+    ausenciaAtiva = data.ativo;
+    updateAusenciaBtn();
+    addLog(data.ativo ? `Modo ausência ativado` : 'Modo ausência desativado');
+  });
+
+  checkAusencia();
+  // ─────────────────────────────────────────────────────────────────────────
+
   document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); }));
 </script>
 

@@ -31,8 +31,8 @@ export async function lookupTrello(phone: string): Promise<{ name: string; phone
           phoneInCard.includes(normalizedPhone) ||
           normalizedPhone.includes(phoneInCard.slice(-8))
         ) {
-          // Extrai nome do título do card (geralmente "Nome da Parte")
-          const name = extractNameFromCard(title);
+          // Extrai nome do card (tenta descrição primeiro, depois título)
+          const name = extractNameFromCard(title, desc);
           const processes = extractProcessNumbers(desc);
           return { name, phone: normalizedPhone, processes };
         }
@@ -46,9 +46,17 @@ export async function lookupTrello(phone: string): Promise<{ name: string; phone
   }
 }
 
-function extractNameFromCard(title: string): string {
-  // Remove números de processo e termos comuns, pega o nome
-  return title.replace(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g, '').trim() || title;
+function extractNameFromCard(title: string, desc?: string): string {
+  // Tenta encontrar "Nome:", "Cliente:" ou "Parte:" na descrição do card
+  if (desc) {
+    const match = desc.match(/(?:nome|cliente|parte|requerente|autor)[:\s]+([^\n\r,]+)/i);
+    if (match) return match[1].trim();
+  }
+  // Remove números de processo do título e retorna o restante
+  const cleaned = title.replace(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g, '').trim();
+  // Se o título contém " X " (modelo "Parte A X Parte B"), pega só a primeira parte
+  const xSplit = cleaned.split(/ x /i);
+  return xSplit[0].trim() || title;
 }
 
 function extractProcessNumbers(text: string): string[] {
