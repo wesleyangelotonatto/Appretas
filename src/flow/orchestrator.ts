@@ -275,8 +275,9 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
 function isWithinBusinessHours(): boolean {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
   const day = now.getDay();
-  const hour = now.getHours();
-  if (day === 0) return false;
-  if (day === 6) return hour >= HORARIO_ATENDIMENTO.sabado.inicio && hour < HORARIO_ATENDIMENTO.sabado.fim;
-  return hour >= HORARIO_ATENDIMENTO.semana.inicio && hour < HORARIO_ATENDIMENTO.semana.fim;
+  if (day === 0 || day === 6) return false;
+  const totalMinutes = now.getHours() * 60 + now.getMinutes();
+  const inicio = HORARIO_ATENDIMENTO.semana.inicio * 60 + HORARIO_ATENDIMENTO.semana.inicioMinuto;
+  const fim = HORARIO_ATENDIMENTO.semana.fim * 60;
+  return totalMinutes >= inicio && totalMinutes < fim;
 }

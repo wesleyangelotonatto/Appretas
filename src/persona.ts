@@ -105,7 +105,7 @@ export function SAUDACAO(g: Genero = 'N'): string {
   return `Olá. Aqui é a Iara, secretária do Dr. Wesley Veiga. Estou disponível para receber sua mensagem e repassá-la ao Dr. Wesley. Como posso ${ajudarSufixo(g)}?`;
 }
 
-export const MSG_FORA_HORARIO = `Nosso horário de atendimento é de segunda a sexta das 7h às 21h e sábados das 7h às 17h. Em casos graves como prisão, acidente ou busca e apreensão, entre em contato pelo telefone do Dr. Wesley diretamente. Caso contrário, retornaremos na próxima janela de atendimento.`;
+export const MSG_FORA_HORARIO = `Aqui é a secretária do doutor Wesley. Ele trabalha em horário comercial (08:30 às 17:00 - Seg a Sex). Em casos graves como prisão, acidente ou busca e apreensão, ligue várias vezes no telefone do Dr. Wesley diretamente. Caso contrário, retornaremos na próxima janela de atendimento ou me conta aqui o que precisa.`;
 
 export function MSG_ENCERRAMENTO(g: Genero = 'N'): string {
   return `Há mais alguma coisa em que eu possa ${ajudarSufixo(g)} ou repassar ao Dr. Wesley?`;
@@ -126,8 +126,8 @@ export const MSG_AMIGO = `Olá. Aqui é a Iara, secretária do Dr. Wesley. Parec
 export const MSG_NENHUMA_MOVIMENTACAO_IMPORTANTE = `Houve uma movimentação simples no processo, sem nada de urgente. Estamos avisando para que saiba que ele está andando normalmente.`;
 
 export const HORARIO_ATENDIMENTO = {
-  semana: { inicio: 7, fim: 21 },
-  sabado: { inicio: 7, fim: 17 },
+  semana: { inicio: 8, inicioMinuto: 30, fim: 17 },
+  sabado: false,
   domingo: false,
 };
 
