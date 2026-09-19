@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iara — Painel de Controle</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0f0f13;
+      --surface: #1a1a22;
+      --surface2: #22222e;
+      --border: #2e2e3e;
+      --text: #e8e8f0;
+      --text-muted: #7a7a9a;
+      --blue: #4f8ef7;
+      --green: #4caf7d;
+      --orange: #f5a623;
+      --red: #f25252;
+      --purple: #a78bfa;
+      --teal: #34d399;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    header h1 { font-size: 18px; font-weight: 600; color: var(--blue); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .mode-badge { background: var(--orange); color: #000; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .integration-status { margin-left: auto; display: flex; gap: 8px; font-size: 11px; }
+    .int-item { display: flex; align-items: center; gap: 4px; }
+    .int-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .int-dot.ok { background: var(--green); }
+    .int-dot.err { background: var(--red); }
+
+    .main { display: flex; flex: 1; overflow: hidden; }
+
+    /* COLUNA ESQUERDA — conversas */
+    .col-left { width: 280px; border-right: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; }
+    .col-left h2 { padding: 12px 16px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+    .conv-list { flex: 1; overflow-y: auto; }
+    .conv-item { padding: 12px 16px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
+    .conv-item:hover, .conv-item.active { background: var(--surface2); }
+    .conv-item .name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .conv-item .phone { font-size: 11px; color: var(--text-muted); }
+    .conv-item .last-msg { font-size: 12px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .type-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700; text-transform: uppercase; }
+    .type-PROCESSO_ATIVO { background: #1e3a5f; color: var(--blue); }
+    .type-LEAD_NOVO { background: #2d1f0f; color: var(--orange); }
+    .type-AMIGO_PESSOAL { background: #1a2e1a; color: var(--teal); }
+    .type-INSTITUCIONAL { background: #2d1a2d; color: var(--purple); }
+    .type-NOVO_CASO_CLIENTE_ANTIGO { background: #2d2d0f; color: #f7c948; }
+    .type-NEGOCIO_PARTICULAR { background: #1a2d2d; color: var(--teal); }
+    .type-DESCONHECIDO { background: #2d1a1a; color: var(--red); }
+    .status-indicator { font-size: 10px; color: var(--text-muted); margin-top: 2px; }
+    .status-indicator.takeover { color: var(--green); }
+    .status-indicator.pausado { color: var(--orange); }
+
+    /* COLUNA CENTRAL — chat */
+    .col-center { flex: 1; display: flex; flex-direction: column; }
+    .chat-header { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .chat-header .contact-info h3 { font-size: 16px; }
+    .chat-header .contact-info p { font-size: 12px; color: var(--text-muted); }
+    .chat-actions { margin-left: auto; display: flex; gap: 8px; }
+    .btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: opacity .15s; }
+    .btn:hover { opacity: .85; }
+    .btn-takeover { background: var(--orange); color: #000; }
+    .btn-handback { background: var(--green); color: #000; }
+    .btn-pause { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-approve { background: var(--green); color: #000; }
+
+    .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+    .message { max-width: 75%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; }
+    .message.client { background: var(--surface2); align-self: flex-start; border-radius: 12px 12px 12px 0; }
+    .message.iara { background: #1e3a5f; align-self: flex-end; border-radius: 12px 12px 0 12px; }
+    .message.wesley { background: #1a3a1a; align-self: flex-end; border-radius: 12px 12px 0 12px; }
+    .message .msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+    .message .msg-role { font-weight: 700; font-size: 11px; margin-bottom: 2px; }
+    .msg-role.client { color: var(--text-muted); }
+    .msg-role.iara { color: var(--blue); }
+    .msg-role.wesley { color: var(--green); }
+    .empty-chat { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
+
+    .takeover-bar { padding: 12px 16px; background: var(--surface); border-top: 1px solid var(--border); display: none; gap: 8px; }
+    .takeover-bar.active { display: flex; }
+    .takeover-bar input { flex: 1; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 14px; outline: none; }
+    .takeover-bar input:focus { border-color: var(--blue); }
+
+    /* Aprovações pendentes (modo treino) */
+    .approvals-section { padding: 10px 16px; background: #2d1a0a; border-top: 1px solid var(--orange); display: none; }
+    .approvals-section.has-items { display: block; }
+    .approvals-section h4 { font-size: 12px; color: var(--orange); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .approval-item { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .approval-item .draft-text { font-size: 13px; margin-bottom: 8px; border-left: 3px solid var(--blue); padding-left: 10px; }
+    .approval-actions { display: flex; gap: 8px; }
+    .edit-area { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 6px 10px; border-radius: 4px; font-size: 13px; resize: vertical; min-height: 60px; margin-bottom: 6px; display: none; }
+
+    /* COLUNA DIREITA — comandos */
+    .col-right { width: 320px; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; flex-shrink: 0; }
+    .col-right h2 { padding: 12px 16px; font-size: 12px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+    .alerts { flex: 0 0 auto; max-height: 200px; overflow-y: auto; border-bottom: 1px solid var(--border); }
+    .alert-item { padding: 8px 16px; font-size: 12px; border-left: 3px solid var(--border); margin-bottom: 1px; }
+    .alert-item.high { border-left-color: var(--red); background: #1a0f0f; }
+    .alert-item.medium { border-left-color: var(--orange); background: #1a140f; }
+    .alert-item.low { border-left-color: var(--text-muted); }
+    .alert-item.lead_novo { border-left-color: var(--orange); }
+    .alert-item .alert-time { color: var(--text-muted); font-size: 10px; }
+
+    .cmd-log { flex: 1; overflow-y: auto; padding: 12px 16px; }
+    .log-item { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+    .log-item .log-time { color: var(--text-muted); font-size: 10px; }
+    .log-item .log-action { color: var(--teal); font-weight: 600; }
+
+    .cmd-input-area { padding: 12px 16px; border-top: 1px solid var(--border); }
+    .cmd-input-area textarea { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 6px; font-size: 13px; outline: none; resize: none; height: 80px; font-family: inherit; }
+    .cmd-input-area textarea:focus { border-color: var(--blue); }
+    .cmd-suggestions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .cmd-chip { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); padding: 3px 8px; border-radius: 4px; font-size: 11px; cursor: pointer; transition: all .15s; }
+    .cmd-chip:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+    .cmd-send { width: 100%; margin-top: 8px; background: var(--blue); color: #fff; border: none; padding: 8px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s; }
+    .cmd-send:hover { opacity: .85; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="status-dot" id="conn-dot" style="background:var(--red)"></div>
+  <h1>🌿 Iara — Secretária Virtual</h1>
+  <span id="mode-badge" class="mode-badge">MODO TREINO</span>
+  <div class="integration-status">
+    <div class="int-item"><div class="int-dot ok" id="dot-waspeed"></div> Waspeed</div>
+    <div class="int-item"><div class="int-dot ok" id="dot-trello"></div> Trello</div>
+    <div class="int-item"><div class="int-dot ok" id="dot-djen"></div> DJEN</div>
+    <div class="int-item"><div class="int-dot ok" id="dot-drive"></div> Drive</div>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- COLUNA ESQUERDA -->
+  <div class="col-left">
+    <h2>Conversas</h2>
+    <div class="conv-list" id="conv-list">
+      <div style="padding:16px;color:var(--text-muted);font-size:13px;">Aguardando mensagens...</div>
+    </div>
+  </div>
+
+  <!-- COLUNA CENTRAL -->
+  <div class="col-center">
+    <div class="chat-header">
+      <div class="contact-info">
+        <h3 id="chat-name">Selecione uma conversa</h3>
+        <p id="chat-phone" style="color:var(--text-muted)"></p>
+      </div>
+      <div class="chat-actions" id="chat-actions" style="display:none">
+        <button class="btn btn-pause" onclick="pauseContact()">⏸ Pausar</button>
+        <button class="btn btn-takeover" id="btn-takeover" onclick="toggleTakeover()">🎙 Assumir</button>
+      </div>
+    </div>
+
+    <!-- Aprovações pendentes (modo treino) -->
+    <div class="approvals-section" id="approvals-section">
+      <h4>⚠ Aguardando aprovação antes de enviar</h4>
+      <div id="approvals-list"></div>
+    </div>
+
+    <div class="messages" id="messages">
+      <div class="empty-chat">Selecione uma conversa à esquerda</div>
+    </div>
+
+    <div class="takeover-bar" id="takeover-bar">
+      <input type="text" id="takeover-input" placeholder="Digite e pressione Enter para enviar como Wesley..." />
+      <button class="btn btn-handback" onclick="handBack()">Devolver à IA</button>
+    </div>
+  </div>
+
+  <!-- COLUNA DIREITA -->
+  <div class="col-right">
+    <h2>Central de Alertas &amp; Comandos</h2>
+    <div class="alerts" id="alerts">
+      <div style="padding:8px 16px;color:var(--text-muted);font-size:12px;">Sem alertas</div>
+    </div>
+    <div class="cmd-log" id="cmd-log">
+      <div style="color:var(--text-muted);font-size:12px;">Log de ações...</div>
+    </div>
+    <div class="cmd-input-area">
+      <textarea id="cmd-text" placeholder="Digite um comando em linguagem natural...&#10;Ex: &quot;responde João Silva: aguarde mais um pouco&quot;"></textarea>
+      <div class="cmd-suggestions">
+        <span class="cmd-chip" onclick="setCmd('resumo do dia')">resumo do dia</span>
+        <span class="cmd-chip" onclick="setCmd('busca processo: ')">busca processo</span>
+        <span class="cmd-chip" onclick="setCmd('pausa ')">pausa contato</span>
+        <span class="cmd-chip" onclick="setCmd('cria lead: ')">cria lead</span>
+        <span class="cmd-chip" onclick="setCmd('direciona ')">direciona</span>
+        <span class="cmd-chip" onclick="setCmd('salva nota: ')">salva nota</span>
+      </div>
+      <button class="cmd-send" onclick="sendCommand()">Executar Comando</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const socket = io();
+  let activePhone = null;
+  let conversations = {}; // phone -> {name, type, status, messages[]}
+  let pendingApprovals = [];
+
+  // ─── Socket.IO events ─────────────────────────────────────────────────────
+  socket.on('connect', () => {
+    document.getElementById('conn-dot').style.background = 'var(--green)';
+    loadPendingApprovals();
+  });
+
+  socket.on('disconnect', () => {
+    document.getElementById('conn-dot').style.background = 'var(--red)';
+  });
+
+  socket.on('message', (data) => {
+    const { phone, role, body, mediaUrl, timestamp, takeover } = data;
+    ensureConv(phone);
+    conversations[phone].messages.push({ role, body, mediaUrl, timestamp });
+    renderConvList();
+    if (activePhone === phone) renderMessages();
+    addLog(`Msg (${role}) de ${conversations[phone].name || phone}`);
+  });
+
+  socket.on('session_update', (data) => {
+    const { phone, name, type, status, processes } = data;
+    ensureConv(phone);
+    if (name) conversations[phone].name = name;
+    if (type) conversations[phone].type = type;
+    if (status) conversations[phone].status = status;
+    if (processes) conversations[phone].processes = processes;
+    renderConvList();
+    if (activePhone === phone) updateChatHeader();
+  });
+
+  socket.on('pending_approval', (data) => {
+    pendingApprovals.push(data);
+    renderApprovals();
+  });
+
+  socket.on('approval_sent', (data) => {
+    pendingApprovals = pendingApprovals.filter(a => a.id !== data.id);
+    renderApprovals();
+  });
+
+  socket.on('alert', (data) => addAlert(data));
+  socket.on('urgent_alert', (data) => addAlert({ ...data, priority: 'high', type: 'URGÊNCIA' }));
+  socket.on('new_group', (data) => addAlert({ message: data.message, priority: 'medium', type: 'GRUPO' }));
+  socket.on('transcription', (data) => addLog(`Áudio transcrito de ${data.phone}`));
+  socket.on('error', (data) => addLog(`ERRO: ${data.error}`, true));
+
+  // ─── Funções de renderização ───────────────────────────────────────────────
+  function ensureConv(phone) {
+    if (!conversations[phone]) {
+      conversations[phone] = { name: phone, type: 'DESCONHECIDO', status: 'ativo', messages: [], processes: [] };
+    }
+  }
+
+  function renderConvList() {
+    const list = document.getElementById('conv-list');
+    const sorted = Object.entries(conversations).sort((a, b) => {
+      const aLast = a[1].messages[a[1].messages.length - 1]?.timestamp || 0;
+      const bLast = b[1].messages[b[1].messages.length - 1]?.timestamp || 0;
+      return bLast - aLast;
+    });
+
+    list.innerHTML = sorted.map(([phone, conv]) => `
+      <div class="conv-item ${activePhone === phone ? 'active' : ''}" onclick="selectConv('${phone}')">
+        <div class="name">
+          ${escHtml(conv.name || phone)}
+          <span class="type-badge type-${conv.type}">${conv.type.replace('_', ' ')}</span>
+        </div>
+        <div class="phone">${phone}</div>
+        <div class="last-msg">${escHtml((conv.messages[conv.messages.length - 1]?.body || '').substring(0, 60))}</div>
+        <div class="status-indicator ${conv.status}">${statusLabel(conv.status)}</div>
+      </div>
+    `).join('');
+  }
+
+  function statusLabel(s) {
+    return { ativo: '🤖 IA respondendo', takeover: '🎙 Takeover ativo', pausado: '⏸ Pausado', encerrado: '✓ Encerrado' }[s] || s;
+  }
+
+  function selectConv(phone) {
+    activePhone = phone;
+    renderConvList();
+    renderMessages();
+    updateChatHeader();
+    document.getElementById('chat-actions').style.display = 'flex';
+  }
+
+  function updateChatHeader() {
+    const conv = conversations[activePhone];
+    if (!conv) return;
+    document.getElementById('chat-name').textContent = conv.name || activePhone;
+    document.getElementById('chat-phone').textContent = activePhone + (conv.processes?.length ? ` • Processos: ${conv.processes.join(', ')}` : '');
+    const btn = document.getElementById('btn-takeover');
+    btn.textContent = conv.status === 'takeover' ? '↩ Devolver à IA' : '🎙 Assumir';
+    btn.className = 'btn ' + (conv.status === 'takeover' ? 'btn-handback' : 'btn-takeover');
+    document.getElementById('takeover-bar').className = 'takeover-bar' + (conv.status === 'takeover' ? ' active' : '');
+  }
+
+  function renderMessages() {
+    const conv = conversations[activePhone];
+    const container = document.getElementById('messages');
+    if (!conv?.messages.length) {
+      container.innerHTML = '<div class="empty-chat">Sem mensagens</div>';
+      return;
+    }
+    container.innerHTML = conv.messages.map(m => `
+      <div class="message ${m.role}">
+        <div class="msg-role ${m.role}">${{ client: 'Cliente', iara: 'Iara', wesley: 'Wesley' }[m.role] || m.role}</div>
+        ${escHtml(m.body)}
+        <div class="msg-meta">${m.timestamp ? new Date(m.timestamp).toLocaleTimeString('pt-BR') : ''}</div>
+      </div>
+    `).join('');
+    container.scrollTop = container.scrollHeight;
+
+    // Filtra aprovações para o contato ativo
+    renderApprovals();
+  }
+
+  function renderApprovals() {
+    const section = document.getElementById('approvals-section');
+    const list = document.getElementById('approvals-list');
+    const filtered = activePhone
+      ? pendingApprovals.filter(a => a.phone === activePhone)
+      : pendingApprovals;
+
+    if (!filtered.length) {
+      section.className = 'approvals-section';
+      return;
+    }
+    section.className = 'approvals-section has-items';
+    list.innerHTML = filtered.map(a => `
+      <div class="approval-item" id="apr-${a.id}">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Para: <b>${a.phone}</b></div>
+        <div class="draft-text" id="draft-text-${a.id}">${escHtml(a.draft)}</div>
+        <textarea class="edit-area" id="edit-${a.id}">${escHtml(a.draft)}</textarea>
+        <div class="approval-actions">
+          <button class="btn btn-approve" onclick="approveResponse(${a.id}, '${a.phone}')">✓ Aprovar e Enviar</button>
+          <button class="btn btn-pause" onclick="showEdit(${a.id})">✎ Editar</button>
+          <button class="btn btn-approve" onclick="approveEdited(${a.id}, '${a.phone}')" id="send-edited-${a.id}" style="display:none">✓ Enviar Editado</button>
+          <button class="btn btn-danger" onclick="discardApproval(${a.id})">✕ Descartar</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function approveResponse(id, phone) {
+    const draft = document.getElementById(`draft-text-${id}`)?.textContent;
+    await fetch('/command/approve/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, draft })
+    });
+    pendingApprovals = pendingApprovals.filter(a => a.id !== id);
+    renderApprovals();
+    addLog(`Resposta aprovada e enviada para ${phone}`);
+  }
+
+  function showEdit(id) {
+    document.getElementById(`edit-${id}`).style.display = 'block';
+    document.getElementById(`send-edited-${id}`).style.display = 'inline-block';
+  }
+
+  async function approveEdited(id, phone) {
+    const draft = document.getElementById(`edit-${id}`).value;
+    await fetch('/command/approve/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, draft })
+    });
+    pendingApprovals = pendingApprovals.filter(a => a.id !== id);
+    renderApprovals();
+    addLog(`Resposta editada e enviada para ${phone}`);
+  }
+
+  async function discardApproval(id) {
+    await fetch('/command/approve/' + id, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: '', draft: '__DISCARD__' })
+    });
+    pendingApprovals = pendingApprovals.filter(a => a.id !== id);
+    renderApprovals();
+  }
+
+  async function toggleTakeover() {
+    if (!activePhone) return;
+    const conv = conversations[activePhone];
+    const isTakeover = conv.status === 'takeover';
+    await fetch(isTakeover ? '/command/handback' : '/command/takeover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: activePhone })
+    });
+    conv.status = isTakeover ? 'ativo' : 'takeover';
+    updateChatHeader();
+    renderConvList();
+    addLog(isTakeover ? `Devolveu ${conv.name} à IA` : `Assumiu conversa com ${conv.name}`);
+  }
+
+  async function handBack() {
+    if (!activePhone) return;
+    await fetch('/command/handback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone: activePhone })
+    });
+    conversations[activePhone].status = 'ativo';
+    updateChatHeader();
+    renderConvList();
+  }
+
+  async function pauseContact() {
+    if (!activePhone) return;
+    await sendCmd(`pausa ${activePhone}`);
+    conversations[activePhone].status = 'pausado';
+    updateChatHeader();
+    renderConvList();
+  }
+
+  const takeoverInput = document.getElementById('takeover-input');
+  takeoverInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && activePhone) {
+      e.preventDefault();
+      const msg = takeoverInput.value.trim();
+      if (!msg) return;
+      await fetch('/command/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: activePhone, message: msg })
+      });
+      takeoverInput.value = '';
+    }
+  });
+
+  async function sendCommand() {
+    const text = document.getElementById('cmd-text').value.trim();
+    if (!text) return;
+    await sendCmd(text);
+    document.getElementById('cmd-text').value = '';
+  }
+
+  async function sendCmd(text) {
+    const res = await fetch('/command', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, context: JSON.stringify({ activePhone, conversations: Object.keys(conversations) }) })
+    });
+    const data = await res.json();
+    addLog(`Cmd: ${text} → ${data.parsed?.response || 'executado'}`);
+    return data;
+  }
+
+  document.getElementById('cmd-text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) sendCommand();
+  });
+
+  function setCmd(text) {
+    document.getElementById('cmd-text').value = text;
+    document.getElementById('cmd-text').focus();
+  }
+
+  function addAlert(data) {
+    const alerts = document.getElementById('alerts');
+    const first = alerts.querySelector('[style*="Sem alertas"]');
+    if (first) first.remove();
+    const priority = data.priority || 'low';
+    const div = document.createElement('div');
+    div.className = `alert-item ${priority} ${data.type || ''}`;
+    div.innerHTML = `
+      <div class="alert-time">${new Date().toLocaleTimeString('pt-BR')}</div>
+      <b>${data.type || 'ALERTA'}</b>: ${escHtml(data.message || '')}
+    `;
+    alerts.prepend(div);
+  }
+
+  function addLog(text, isError = false) {
+    const log = document.getElementById('cmd-log');
+    const first = log.querySelector('[style*="Log"]');
+    if (first) first.remove();
+    const div = document.createElement('div');
+    div.className = 'log-item';
+    div.innerHTML = `<span class="log-time">${new Date().toLocaleTimeString('pt-BR')}</span> <span class="log-action" style="${isError ? 'color:var(--red)' : ''}">${escHtml(text)}</span>`;
+    log.prepend(div);
+    // Mantém no máx 50 itens
+    while (log.children.length > 50) log.removeChild(log.lastChild);
+  }
+
+  async function loadPendingApprovals() {
+    const res = await fetch('/command/pending');
+    const data = await res.json();
+    pendingApprovals = data;
+    renderApprovals();
+  }
+
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/\n/g, '<br>');
+  }
+</script>
+
+</body>
+</html>
