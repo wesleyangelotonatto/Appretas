@@ -10,6 +10,7 @@ import { consultarDjen } from '../integrations/djen';
 import { buscarCardTrello, criarCardLead } from '../integrations/trello';
 import { aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR, HORARIO_ATENDIMENTO } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
+import { detectAppointment } from './appointmentDetector';
 
 interface IncomingMessage {
   phone: string;
@@ -84,7 +85,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // Instrução específica para este contato
     const customInstruction = getContactInstruction(phone);
 
-    // 9. Classificação via Groq
+    // 9. Classificação via Claude Haiku
     const classification = await classifyContact({
       phone,
       found: !!contact,
@@ -112,7 +113,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // 10. Primeira mensagem do dia → saudação (se não tem sessão ativa)
     const isFirstMessage = !session;
     if (isFirstMessage && classification.type !== 'PROCESSO_ATIVO') {
-      await deliverOrQueue(phone, SAUDACAO, 'saudação inicial', io);
+      await deliverOrQueue(phone, SAUDACAO, 'saudação inicial', io, contact?.name || 'Desconhecido');
       return;
     }
 
@@ -141,7 +142,6 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
         case 'NOVO_CASO_CLIENTE_ANTIGO': {
           context = JSON.stringify({ contact, intent: classification.intent, customInstruction });
           draft = await draftResponse(classification.type, textBody, context);
-          // Cria card no Trello Vendas e Leads
           await criarCardLead({
             name: contact?.name || phone,
             phone,
@@ -189,7 +189,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     if (draft) {
       draft = aplicarGlossario(draft);
-      await deliverOrQueue(phone, draft, context, io);
+      await deliverOrQueue(phone, draft, context, io, contact?.name || session?.name);
     }
 
   } catch (err) {
@@ -198,11 +198,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
   }
 }
 
-async function deliverOrQueue(phone: string, draft: string, context: string, io: any) {
+async function deliverOrQueue(phone: string, draft: string, context: string, io: any, contactName?: string) {
   const modoTreino = process.env.MODO_TREINO === 'true';
 
   if (modoTreino) {
-    // Enfileira para aprovação de Wesley no painel
     const id = savePendingApproval(phone, draft, context);
     io?.emit('pending_approval', { id, phone, draft, context, timestamp: Date.now() });
     console.log(`[treino] resposta enfileirada para aprovação — ${phone}`);
@@ -211,14 +210,17 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
     saveMessage(phone, 'iara', draft);
     io?.emit('message', { phone, role: 'iara', body: draft, timestamp: Date.now() });
   }
+
+  // Detecta agendamento na resposta da Iara
+  detectAppointment(phone, draft, contactName, io).catch(() => {});
 }
 
 function isWithinBusinessHours(): boolean {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
-  const day = now.getDay(); // 0=dom, 1=seg, ..., 6=sab
+  const day = now.getDay();
   const hour = now.getHours();
 
-  if (day === 0) return false; // domingo: fechado
+  if (day === 0) return false;
   if (day === 6) return hour >= HORARIO_ATENDIMENTO.sabado.inicio && hour < HORARIO_ATENDIMENTO.sabado.fim;
   return hour >= HORARIO_ATENDIMENTO.semana.inicio && hour < HORARIO_ATENDIMENTO.semana.fim;
 }
