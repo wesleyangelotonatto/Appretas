@@ -8,7 +8,7 @@ import { sendMessage, createNote } from '../responder/send';
 import { savePendingApproval } from '../memory/db';
 import { consultarDjen } from '../integrations/djen';
 import { buscarCardTrello, criarCardLead } from '../integrations/trello';
-import { aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR, HORARIO_ATENDIMENTO } from '../persona';
+import { aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR, MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, HORARIO_ATENDIMENTO } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
 import { detectAppointment } from './appointmentDetector';
 
@@ -18,6 +18,34 @@ interface IncomingMessage {
   mediaUrl?: string;
   messageType?: string;
   io: any;
+}
+
+// Padrões de encerramento — não gera resposta se o cliente claramente encerrou
+const ENCERRAMENTOS_RE = [
+  /^ok[\s!.]*$/i,
+  /^certo[\s!.]*$/i,
+  /^entendido[\s!.]*$/i,
+  /^combinado[\s!.]*$/i,
+  /^perfeito[\s!.]*$/i,
+  /^tudo\s*bem[\s!.]*$/i,
+  /^tudo\s*(certo|ok|ótimo)[\s!.]*$/i,
+  /^tá\s*(bem|bom|ótimo|certo|ok)[\s!.]*$/i,
+  /^pode\s*ser[\s!.]*$/i,
+  /^(muito\s+)?obrigad[oa][\s!.,]*$/i,
+  /^(muito\s+)?obrigad[oa],?\s*(dr\.?\s*wesley|iara|doutor)?[\s!.]*$/i,
+  /^valeu[\s!.]*$/i,
+  /^até\s*(mais|logo|breve|amanhã|depois)[\s!.]*$/i,
+  /^(um\s+)?abraço[\s!.]*$/i,
+  /^boa\s*(noite|tarde|semana)[\s!.]*$/i,
+  /^bom\s*(dia|fim\s*de\s*semana)[\s!.]*$/i,
+  /^flw[\s!.]*$/i,
+  /^👍[\s!.]*$/,
+];
+
+function isEncerramento(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return ENCERRAMENTOS_RE.some(re => re.test(t));
 }
 
 // Palavras-chave de reclamação para gerar alerta prioritário
@@ -105,17 +133,35 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       });
     }
 
-    // 10. Detecta pedido para falar com advogado
-    const pedidoAdvogado = /(falar|fala|quero|preciso).*(advogado|doutor|dr|wesley)/i.test(textBody);
+    // 10. Encerramento — cliente não está aguardando resposta
+    if (isEncerramento(textBody)) {
+      console.log(`[orchestrator] encerramento detectado — sem resposta para ${phone}: "${textBody}"`);
+      return;
+    }
 
-    // 11. Lookup de identidade
+    // 11. Lookup de identidade (antes das checagens que usam contact?.name)
     const sheetsContact = await lookupSheets(phone);
     const trelloContact = sheetsContact ? null : await lookupTrello(phone);
     const contact = sheetsContact || trelloContact;
 
     const customInstruction = getContactInstruction(phone);
 
-    // 12. Classificação via Claude Haiku
+    // 12. Detecta recusa à secretária / pedido para falar com advogado
+    const recusaSecretaria = /(não\s+quero|recuso|não\s+aceito).*(secretár|robô|bot|ia\b|inteligência)/i.test(textBody);
+    const pedidoAdvogado = /(falar|fala|quero|preciso|chama|passa).*(advogado|doutor|dr\.?|wesley)/i.test(textBody);
+
+    if (recusaSecretaria || pedidoAdvogado) {
+      const msgResposta = recusaSecretaria ? MSG_RECUSA_SECRETARIA : MSG_PEDIR_ADVOGADO;
+      io?.emit('alert', {
+        phone,
+        type: 'pedido_advogado',
+        message: `${contact?.name || phone} ${recusaSecretaria ? 'recusou a secretária e' : ''} pediu para falar com o Dr. Wesley`,
+      });
+      await deliverOrQueue(phone, msgResposta, 'pedido_advogado', io, contact?.name);
+      return;
+    }
+
+    // 13. Classificação via Claude Haiku
     const classification = await classifyContact({
       phone,
       found: !!contact,
@@ -148,11 +194,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     let draft = '';
     let context = '';
 
-    if (pedidoAdvogado) {
-      draft = 'Vou comunicar ao Dr. Wesley sua solicitação. Ele retornará assim que possível.';
-      io?.emit('alert', { phone, type: 'pedido_advogado', message: `${contact?.name || phone} pediu para falar com o Dr. Wesley` });
-    } else {
-      switch (classification.type as ClassificationType) {
+    switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
           const djenData = contact?.processes?.length ? await consultarDjen(contact.processes[0]) : null;
           const trelloCard = contact?.processes?.length ? await buscarCardTrello(contact.processes[0]) : null;
@@ -175,7 +217,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           break;
         }
         case 'AMIGO_PESSOAL': {
-          draft = 'Oi! Aqui é a Iara Secretária do Doutor Wesley. Pelo que vi o assunto não é sobre questões jurídicas né rsrs, se eu estiver errada, me corrija. Wesley está em atendimento agora, mas vou repassar a mensagem pra ele pra te retornar.';
+          draft = 'Olá. Aqui é a Iara, secretária do Dr. Wesley. Parece que sua mensagem é de cunho pessoal — caso eu esteja enganada, por favor me corrija. Vou repassar ao Dr. Wesley para que ele retorne quando disponível.';
           io?.emit('alert', { phone, type: 'amigo', message: `Mensagem pessoal de ${contact?.name || phone}`, priority: 'low' });
           break;
         }
@@ -191,7 +233,6 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           draft = SAUDACAO;
           io?.emit('alert', { phone, type: 'desconhecido', message: `Contato desconhecido: ${phone}` });
         }
-      }
     }
 
     if (draft) {
