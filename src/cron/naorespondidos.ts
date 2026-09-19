@@ -4,22 +4,22 @@ import { sendMessage } from '../responder/send';
 // Variações para não repetir sempre a mesma mensagem
 const VARIACOES = [
   (nome: string) =>
-    `Olá${nome ? ', ' + nome : ''}! 😊 Passando rapidinho pra te avisar que não esquecemos de você. O Dr. Wesley está verificando sua mensagem e em breve vai te dar um retorno.`,
+    `Olá${nome ? ', ' + nome : ''}. Aqui é a Iara, secretária do Dr. Wesley. Gostaria de informar que sua mensagem foi recebida e não ficou sem atenção. O Dr. Wesley retornará assim que possível.`,
 
   (nome: string) =>
-    `Oi${nome ? ' ' + nome : ''}! Aqui é a Iara, secretária do Dr. Wesley. Queria te tranquilizar: sua mensagem foi recebida e está sendo tratada com atenção. Assim que possível a gente volta com uma resposta! 🙏`,
+    `Olá${nome ? ', ' + nome : ''}. Passando para informar que sua mensagem está sendo tratada pelo Dr. Wesley. Em breve ele entrará em contato. Caso haja alguma urgência, por favor me avise que repasso imediatamente.`,
 
   (nome: string) =>
-    `${nome ? nome + ', v' : 'V'}ocê está em boa mãos! 💙 Só passando pra avisar que o Dr. Wesley está ciente da sua mensagem e vai te responder em breve. Qualquer urgência, pode me falar que eu repasso imediatamente.`,
+    `${nome ? nome + ', ' : ''}boa tarde. Aqui é a Iara, secretária do escritório. Quero garantir que sua mensagem foi recebida e está sendo verificada. O Dr. Wesley retornará em breve.`,
 
   (nome: string) =>
-    `Olá${nome ? ', ' + nome : ''}! Iara aqui. Quero que saiba que sua mensagem não ficou sem atenção — o Dr. Wesley já está a par e retornará assim que possível. Obrigada pela paciência! 😊`,
+    `Olá${nome ? ', ' + nome : ''}. Informo que sua mensagem foi recebida e está sendo analisada pelo Dr. Wesley. Agradecemos a paciência e em breve teremos um retorno para o senhor${nome ? '' : 'a'}.`,
 
   (nome: string) =>
-    `Oi${nome ? ' ' + nome : ''}! 👋 Passando para te avisar que recebemos sua mensagem e não esquecemos de você. O Wesley vai te dar um retorno em breve. Se surgir alguma urgência, é só me chamar aqui!`,
+    `${nome ? nome + ', ' : ''}sua mensagem foi recebida e não ficou sem atenção. O Dr. Wesley está ciente e entrará em contato assim que possível. Obrigada pela compreensão.`,
 
   (nome: string) =>
-    `${nome ? nome + ', ' : ''}quero te garantir que sua mensagem está sendo cuidada com carinho! 💙 O Dr. Wesley vai entrar em contato assim que possível. Obrigada por aguardar com paciência.`,
+    `Olá${nome ? ', ' + nome : ''}. Aqui é a Iara, do escritório do Dr. Wesley. Quero que saiba que sua mensagem está sendo tratada com a devida atenção. Em breve o Dr. Wesley ou eu retornaremos com uma resposta.`,
 ];
 
 function escolherVariacao(phone: string, nome: string): string {
