@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { SYSTEM_PROMPT_IARA, aplicarGlossario } from '../persona';
+import { buildSystemPrompt, aplicarGlossario, type Genero } from '../persona';
 import type { ClassificationType } from '../classifier/groq';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -17,7 +17,8 @@ const TYPE_INSTRUCTIONS: Record<string, string> = {
 export async function draftResponse(
   type: ClassificationType | string,
   clientMessage: string,
-  context: string
+  context: string,
+  genero: Genero = 'N'
 ): Promise<string> {
   const typeInstruction = TYPE_INSTRUCTIONS[type] || TYPE_INSTRUCTIONS['DESCONHECIDO'];
 
@@ -35,7 +36,7 @@ Redija a resposta da Iara. Máximo 3 parágrafos curtos. Linguagem simples. Nunc
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 500,
-    system: SYSTEM_PROMPT_IARA,
+    system: buildSystemPrompt(genero),
     messages: [{ role: 'user', content: userPrompt }],
   });
 

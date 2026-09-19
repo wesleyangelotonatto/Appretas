@@ -8,7 +8,11 @@ import { sendMessage, createNote } from '../responder/send';
 import { savePendingApproval } from '../memory/db';
 import { consultarDjen } from '../integrations/djen';
 import { buscarCardTrello, criarCardLead } from '../integrations/trello';
-import { aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR, MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, HORARIO_ATENDIMENTO } from '../persona';
+import {
+  aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
+  MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, HORARIO_ATENDIMENTO,
+  detectarGenero, type Genero,
+} from '../persona';
 import { transcribeAudio } from '../classifier/groq';
 import { detectAppointment } from './appointmentDetector';
 
@@ -94,6 +98,9 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     saveMessage(phone, 'client', textBody, mediaUrl);
     io?.emit('message', { phone, role: 'client', body: textBody, mediaUrl, timestamp: Date.now() });
 
+    // 5a. Detecta gênero — pelo texto da mensagem e pelo nome já salvo na sessão
+    const genero: Genero = detectarGenero(textBody, session?.name);
+
     // 6. Modo ausência (Wesley em férias / feriado)
     const ausenciaMsg = getSetting('ausencia_msg');
     if (ausenciaMsg) {
@@ -151,7 +158,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     const pedidoAdvogado = /(falar|fala|quero|preciso|chama|passa).*(advogado|doutor|dr\.?|wesley)/i.test(textBody);
 
     if (recusaSecretaria || pedidoAdvogado) {
-      const msgResposta = recusaSecretaria ? MSG_RECUSA_SECRETARIA : MSG_PEDIR_ADVOGADO;
+      const msgResposta = recusaSecretaria ? MSG_RECUSA_SECRETARIA(genero) : MSG_PEDIR_ADVOGADO;
       io?.emit('alert', {
         phone,
         type: 'pedido_advogado',
@@ -185,9 +192,12 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       timestamp: Date.now(),
     });
 
+    // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
+    const generoFinal: Genero = detectarGenero(textBody, contact?.name || session?.name);
+
     const isFirstMessage = !session;
     if (isFirstMessage && classification.type !== 'PROCESSO_ATIVO') {
-      await deliverOrQueue(phone, SAUDACAO, 'saudação inicial', io, contact?.name || 'Desconhecido');
+      await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, contact?.name || 'Desconhecido');
       return;
     }
 
@@ -199,38 +209,38 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           const djenData = contact?.processes?.length ? await consultarDjen(contact.processes[0]) : null;
           const trelloCard = contact?.processes?.length ? await buscarCardTrello(contact.processes[0]) : null;
           context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal);
           break;
         }
         case 'NOVO_CASO_CLIENTE_ANTIGO': {
           context = JSON.stringify({ contact, intent: classification.intent, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal);
           await criarCardLead({ name: contact?.name || phone, phone, summary: classification.intent, type: 'NOVO_CASO_CLIENTE_ANTIGO' });
           io?.emit('alert', { phone, type: 'novo_caso', message: `Novo caso de cliente antigo: ${contact?.name || phone}` });
           break;
         }
         case 'LEAD_NOVO': {
           context = JSON.stringify({ phone, intent: classification.intent, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal);
           await criarCardLead({ name: phone, phone, summary: classification.intent, type: 'LEAD_NOVO' });
           io?.emit('alert', { phone, type: 'lead_novo', message: `Novo lead: ${phone} — ${classification.intent}` });
           break;
         }
         case 'AMIGO_PESSOAL': {
-          draft = 'Olá. Aqui é a Iara, secretária do Dr. Wesley. Parece que sua mensagem é de cunho pessoal — caso eu esteja enganada, por favor me corrija. Vou repassar ao Dr. Wesley para que ele retorne quando disponível.';
+          draft = MSG_AMIGO;
           io?.emit('alert', { phone, type: 'amigo', message: `Mensagem pessoal de ${contact?.name || phone}`, priority: 'low' });
           break;
         }
         case 'NEGOCIO_PARTICULAR':
         case 'INSTITUCIONAL': {
           context = JSON.stringify({ contact, type: classification.type, intent: classification.intent, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal);
           const priority = classification.type === 'INSTITUCIONAL' ? 'high' : 'medium';
           io?.emit('alert', { phone, type: classification.type.toLowerCase(), message: `${classification.type}: ${contact?.name || phone}`, priority });
           break;
         }
         default: {
-          draft = SAUDACAO;
+          draft = SAUDACAO(generoFinal);
           io?.emit('alert', { phone, type: 'desconhecido', message: `Contato desconhecido: ${phone}` });
         }
     }
