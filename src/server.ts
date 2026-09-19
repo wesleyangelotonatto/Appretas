@@ -5,10 +5,12 @@ import cors from 'cors';
 import path from 'path';
 import cron from 'node-cron';
 import { initDb } from './memory/db';
+import { initDjenCache } from './integrations/djen';
 import { webhookRouter } from './webhook/waspeed';
 import { commandRouter } from './commands/router';
 import { cronAudiencias } from './cron/audiencias';
 import { cronPrazos } from './cron/prazos';
+import { cronFollowUps } from './cron/followups';
 
 const PORT = process.env.PORT || 3000;
 
@@ -29,7 +31,11 @@ app.locals.io = io;
 app.use('/webhook', webhookRouter);
 app.use('/command', commandRouter);
 
-app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
+app.get('/health', (_req, res) => res.json({
+  status: 'ok',
+  modoTreino: process.env.MODO_TREINO === 'true',
+  timestamp: new Date().toISOString()
+}));
 
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
@@ -38,21 +44,26 @@ app.get('/', (_req, res) => {
 // Socket.IO: conexão do painel
 io.on('connection', (socket) => {
   console.log('[painel] conectado:', socket.id);
+  // Envia estado inicial do modo treino
+  socket.emit('config', { modoTreino: process.env.MODO_TREINO === 'true' });
   socket.on('disconnect', () => console.log('[painel] desconectado:', socket.id));
 });
 
-// Cron jobs (Brasília timezone via TZ_APP)
 const TZ = process.env.TZ_APP || 'America/Sao_Paulo';
-// Audiências: dias úteis 08h + sextas 09h (coberto internamente)
-cron.schedule('0 8 * * 1-5', () => cronAudiencias(), { timezone: TZ });
-// Prazos: dias úteis 08h
-cron.schedule('0 8 * * 1-5', () => cronPrazos(), { timezone: TZ });
+
+// Cron jobs
+cron.schedule('0 8 * * 1-5', () => cronAudiencias(), { timezone: TZ });   // seg-sex 08h
+cron.schedule('0 9 * * 5', () => cronAudiencias(), { timezone: TZ });      // sexta 09h (2º aviso semana)
+cron.schedule('0 8 * * 1-5', () => cronPrazos(), { timezone: TZ });        // seg-sex 08h
+cron.schedule('0 * * * *', () => cronFollowUps(), { timezone: TZ });       // hourly follow-ups
 
 async function main() {
   await initDb();
+  initDjenCache();
   server.listen(PORT, () => {
     console.log(`[iara] servidor rodando em http://localhost:${PORT}`);
-    console.log(`[iara] modo treino: ${process.env.MODO_TREINO === 'true' ? 'ATIVO' : 'DESATIVADO'}`);
+    console.log(`[iara] modo treino: ${process.env.MODO_TREINO === 'true' ? 'ATIVO (30 dias)' : 'DESATIVADO'}`);
+    console.log(`[iara] webhook esperado em: POST /webhook`);
   });
 }
 
