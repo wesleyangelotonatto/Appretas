@@ -1,8 +1,11 @@
 import { getDb, saveMessage } from '../memory/db';
 import { sendMessage } from '../responder/send';
 
-// Padrões que indicam encerramento de conversa — cliente não está aguardando resposta
+// Padrões de encerramento inequívoco — lista CONSERVADORA.
+// Na dúvida, NÃO filtra: é melhor enviar um aviso a mais do que deixar
+// o cliente sem retorno. Somente frases que claramente encerram a conversa.
 const ENCERRAMENTOS = [
+  // Confirmações isoladas sem contexto pendente
   /^ok[\s!.]*$/i,
   /^certo[\s!.]*$/i,
   /^entendido[\s!.]*$/i,
@@ -11,22 +14,26 @@ const ENCERRAMENTOS = [
   /^tudo\s*bem[\s!.]*$/i,
   /^tá\s*(bem|bom|ótimo|certo|ok)[\s!.]*$/i,
   /^tudo\s*(certo|ok|ótimo|bem)[\s!.]*$/i,
-  /obrigad[oa]/i,
-  /valeu/i,
-  /até\s*(mais|logo|breve|amanhã|segunda)/i,
-  /^boa\s*(noite|tarde|tarde|semana)[\s!.]*$/i,
-  /^bom\s*dia[\s!.]*$/i,
-  /abraço/i,
+  /^pode\s*ser[\s!.]*$/i,
   /^flw[\s!.]*$/i,
   /^👍[\s!.]*$/,
-  /^sim[\s!.,]*$/i,
-  /^não[\s!.,]*$/i,
-  /^pode\s*ser[\s!.]*$/i,
+  // Agradecimento SEM pedido junto (âncora no início da frase curta)
+  /^(muito\s+)?obrigad[oa][\s!.,]*$/i,
+  /^(muito\s+)?obrigad[oa],?\s*(dr\.?\s*wesley|iara|doutor)?[\s!.]*$/i,
+  /^valeu[\s!.]*$/i,
+  // Despedidas
+  /^até\s*(mais|logo|breve|amanhã|segunda|depois)[\s!.]*$/i,
+  /^(um\s+)?abraço[\s!.]*$/i,
+  /^boa\s*(noite|tarde|semana)[\s!.]*$/i,
+  /^bom\s*(dia|fim\s*de\s*semana)[\s!.]*$/i,
 ];
 
-// Retorna true se a mensagem indica que o cliente encerrou a conversa
+// Retorna true SOMENTE se a mensagem claramente encerra a conversa.
+// Mensagem vazia (mídia/documento sem legenda) → NÃO é encerramento,
+// o cliente enviou algo para análise e está aguardando retorno.
 function pareceEncerramento(body: string): boolean {
   const texto = body.trim();
+  if (!texto) return false; // mídia sem legenda → aguarda análise
   return ENCERRAMENTOS.some(re => re.test(texto));
 }
 
