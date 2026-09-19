@@ -1,6 +1,35 @@
 import { getDb, saveMessage } from '../memory/db';
 import { sendMessage } from '../responder/send';
 
+// Padrões que indicam encerramento de conversa — cliente não está aguardando resposta
+const ENCERRAMENTOS = [
+  /^ok[\s!.]*$/i,
+  /^certo[\s!.]*$/i,
+  /^entendido[\s!.]*$/i,
+  /^combinado[\s!.]*$/i,
+  /^perfeito[\s!.]*$/i,
+  /^tudo\s*bem[\s!.]*$/i,
+  /^tá\s*(bem|bom|ótimo|certo|ok)[\s!.]*$/i,
+  /^tudo\s*(certo|ok|ótimo|bem)[\s!.]*$/i,
+  /obrigad[oa]/i,
+  /valeu/i,
+  /até\s*(mais|logo|breve|amanhã|segunda)/i,
+  /^boa\s*(noite|tarde|tarde|semana)[\s!.]*$/i,
+  /^bom\s*dia[\s!.]*$/i,
+  /abraço/i,
+  /^flw[\s!.]*$/i,
+  /^👍[\s!.]*$/,
+  /^sim[\s!.,]*$/i,
+  /^não[\s!.,]*$/i,
+  /^pode\s*ser[\s!.]*$/i,
+];
+
+// Retorna true se a mensagem indica que o cliente encerrou a conversa
+function pareceEncerramento(body: string): boolean {
+  const texto = body.trim();
+  return ENCERRAMENTOS.some(re => re.test(texto));
+}
+
 // Variações para não repetir sempre a mesma mensagem
 const VARIACOES = [
   (nome: string) =>
@@ -30,7 +59,7 @@ function escolherVariacao(phone: string, nome: string): string {
 
 // Busca conversas onde a última mensagem é do cliente há mais de 6 horas
 // e ainda não enviamos aviso de "não esquecemos" nas últimas 12 horas
-export function getConversasSemResposta(): Array<{ phone: string; name: string | null; ultimo_cliente: number }> {
+export function getConversasSemResposta(): Array<{ phone: string; name: string | null; ultimo_cliente: number; ultima_msg_body: string }> {
   const seiHorasAtras = Math.floor(Date.now() / 1000) - 6 * 3600;
   const dozeHorasAtras = Math.floor(Date.now() / 1000) - 12 * 3600;
 
@@ -38,21 +67,31 @@ export function getConversasSemResposta(): Array<{ phone: string; name: string |
     WITH ultimas AS (
       SELECT
         phone,
-        MAX(created_at) AS ultima_msg,
         MAX(CASE WHEN role = 'client' THEN created_at ELSE 0 END) AS ultimo_cliente,
         MAX(CASE WHEN role IN ('iara','wesley') THEN created_at ELSE 0 END) AS ultima_resposta
       FROM messages
       GROUP BY phone
     ),
+    ultima_msg_cliente AS (
+      SELECT m.phone, m.body AS ultima_msg_body
+      FROM messages m
+      INNER JOIN (
+        SELECT phone, MAX(created_at) AS ts
+        FROM messages
+        WHERE role = 'client'
+        GROUP BY phone
+      ) t ON t.phone = m.phone AND t.ts = m.created_at AND m.role = 'client'
+    ),
     aviso_recente AS (
       SELECT DISTINCT phone FROM messages
       WHERE role = 'iara'
-        AND body LIKE '%não esquecemos%'
+        AND body LIKE '%não ficou sem atenção%'
         AND created_at > ?
     )
-    SELECT u.phone, s.name, u.ultimo_cliente
+    SELECT u.phone, s.name, u.ultimo_cliente, mc.ultima_msg_body
     FROM ultimas u
     LEFT JOIN sessions s ON s.phone = u.phone
+    LEFT JOIN ultima_msg_cliente mc ON mc.phone = u.phone
     LEFT JOIN aviso_recente a ON a.phone = u.phone
     WHERE u.ultimo_cliente > 0
       AND u.ultimo_cliente < ?
@@ -63,24 +102,27 @@ export function getConversasSemResposta(): Array<{ phone: string; name: string |
 
 export async function cronNaoRespondidos(): Promise<void> {
   const conversas = getConversasSemResposta();
+  let enviados = 0;
 
   for (const conv of conversas) {
-    const primeiroNome = conv.name
-      ? conv.name.split(' ')[0]
-      : '';
+    // Ignora se a última mensagem do cliente parece encerramento de conversa
+    if (pareceEncerramento(conv.ultima_msg_body || '')) {
+      console.log(`[cron-naorespondido] ignorado (encerramento) — ${conv.phone}: "${conv.ultima_msg_body}"`);
+      continue;
+    }
 
+    const primeiroNome = conv.name ? conv.name.split(' ')[0] : '';
     const mensagem = escolherVariacao(conv.phone, primeiroNome);
 
     try {
       await sendMessage(conv.phone, mensagem);
       saveMessage(conv.phone, 'iara', mensagem);
       console.log(`[cron-naorespondido] aviso enviado para ${conv.phone}`);
+      enviados++;
     } catch (err) {
       console.error(`[cron-naorespondido] erro ao enviar para ${conv.phone}:`, err);
     }
   }
 
-  if (conversas.length === 0) {
-    console.log('[cron-naorespondido] nenhuma conversa pendente');
-  }
+  console.log(`[cron-naorespondido] ${enviados} aviso(s) enviado(s), ${conversas.length - enviados} ignorado(s)`);
 }
