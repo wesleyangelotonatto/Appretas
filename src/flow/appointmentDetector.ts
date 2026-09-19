@@ -11,8 +11,8 @@ const WESLEY_NUMERO = process.env.WESLEY_NUMERO || '5544988596158';
 const recentDetections = new Map<string, number>();
 function isDuplicate(phone: string, body: string): boolean {
   const key = `${phone}::${body.slice(0, 60)}`;
-  const last = recentDetections.get(key);
   const now = Date.now();
+  const last = recentDetections.get(key);
   if (last && now - last < 2 * 60_000) return true;
   recentDetections.set(key, now);
   if (recentDetections.size > 200) {
@@ -93,8 +93,8 @@ Responda APENAS com JSON válido:
   }
 
   // 2. Salva no histórico SQLite do contato
-  const nota = `[Agendamento detectado] Atendimento com ${name} para ${dateLabel}`;
-  saveMessage(phone, 'iara_sistema', nota);
+  const nota = `[Agendamento] Atendimento com ${name} para ${dateLabel}`;
+  saveMessage(phone, 'iara', nota);
 
   // 3. Emite evento para o painel
   io?.emit('appointment', { phone, name, dateIso: info.dateIso, dateLabel, timestamp: Date.now() });
