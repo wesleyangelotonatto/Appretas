@@ -53,7 +53,7 @@ Responda APENAS com JSON válido:
 {"type": "TIPO", "confidence": 0.0-1.0, "intent": "resumo do que o contato quer"}`;
 
   const response = await groq.chat.completions.create({
-    model: 'llama-3.1-70b-versatile',
+    model: 'llama-3.3-70b-versatile',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.1,
     max_tokens: 200,
@@ -71,7 +71,6 @@ Responda APENAS com JSON válido:
 
 export async function transcribeAudio(mediaUrl: string): Promise<string> {
   try {
-    // Download do áudio para arquivo temporário
     const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
     const tmpPath = path.join('/tmp', `audio_${Date.now()}.ogg`);
     fs.writeFileSync(tmpPath, response.data);
