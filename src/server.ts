@@ -11,6 +11,7 @@ import { commandRouter } from './commands/router';
 import { cronAudiencias } from './cron/audiencias';
 import { cronPrazos } from './cron/prazos';
 import { cronFollowUps } from './cron/followups';
+import { cronNaoRespondidos } from './cron/naorespondidos';
 
 const PORT = process.env.PORT || 3000;
 
@@ -55,6 +56,7 @@ const TZ = process.env.TZ_APP || 'America/Sao_Paulo';
 cron.schedule('0 8 * * 1-5', () => cronAudiencias(), { timezone: TZ });   // seg-sex 08h (audiências + prazos)
 cron.schedule('0 8 * * 1-5', () => cronPrazos(), { timezone: TZ });        // seg-sex 08h
 cron.schedule('0 * * * *', () => cronFollowUps(), { timezone: TZ });       // a cada hora
+cron.schedule('0 * * * *', () => cronNaoRespondidos(), { timezone: TZ });  // a cada hora — avisos de não-esquecemos
 
 async function main() {
   await initDb();
