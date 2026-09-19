@@ -1,8 +1,10 @@
+import Anthropic from '@anthropic-ai/sdk';
 import Groq from 'groq-sdk';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export type ClassificationType =
@@ -52,16 +54,16 @@ Classifique em EXATAMENTE um dos tipos abaixo:
 Responda APENAS com JSON válido:
 {"type": "TIPO", "confidence": 0.0-1.0, "intent": "resumo do que o contato quer"}`;
 
-  const response = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.1,
+  const message = await anthropic.messages.create({
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 200,
+    messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.choices[0]?.message?.content || '{}';
+  const text = message.content[0].type === 'text' ? message.content[0].text : '{}';
   try {
-    const result = JSON.parse(text);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const result = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     if (result.confidence < 0.7) result.type = 'DESCONHECIDO';
     return result as ClassifyResult;
   } catch {
