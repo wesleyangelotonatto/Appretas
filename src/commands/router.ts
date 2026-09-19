@@ -58,6 +58,17 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
   }
 });
 
+// POST /command/resumos — dispara resumos diários manualmente
+commandRouter.post('/resumos', async (_req, res) => {
+  try {
+    const { cronResumosDiarios } = await import('../cron/resumos');
+    cronResumosDiarios().catch(err => console.error('[resumos] erro:', err));
+    res.json({ ok: true, message: 'Geração de resumos iniciada' });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // GET /command/pending — lista aprovações pendentes (modo treino)
 commandRouter.get('/pending', (_req, res) => {
   res.json(getPendingApprovals());
