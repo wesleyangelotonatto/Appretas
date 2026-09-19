@@ -1,11 +1,11 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "python3"]
+nixPkgs = ["nodejs_20", "python3", "gnumake", "gcc"]
 
 [phases.install]
-cmds = ["npm ci"]
+cmds = ["npm install"]
 
 [phases.build]
 cmds = ["npm run build"]
 
 [start]
-cmd = "node dist/server.js"
+cmd = "node -e \"require('./dist/memory/migrate')\" && node dist/server.js"

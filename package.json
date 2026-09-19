@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "db:migrate": "tsx src/memory/migrate.ts"
+    "db:migrate": "node -e \"require('./dist/memory/migrate')\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.0",
@@ -34,6 +34,6 @@
     "typescript": "^5.0.0"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0 <21.0.0"
   }
 }
