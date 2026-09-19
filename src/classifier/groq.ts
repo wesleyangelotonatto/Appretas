@@ -53,7 +53,7 @@ Responda APENAS com JSON válido:
 {"type": "TIPO", "confidence": 0.0-1.0, "intent": "resumo do que o contato quer"}`;
 
   const response = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
+    model: 'llama3-70b-8192',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.1,
     max_tokens: 200,
