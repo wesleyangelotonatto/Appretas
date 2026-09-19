@@ -10,7 +10,12 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
 
     res.json({ status: 'received' });
 
-    if (!payload || payload.type !== 'message') return;
+    console.log('[webhook] payload recebido:', JSON.stringify(payload).slice(0, 300));
+
+    if (!payload || payload.type !== 'message') {
+      console.log('[webhook] ignorado — type:', payload?.type);
+      return;
+    }
 
     const msg = payload.message || payload;
     const from: string = msg.from || msg.chatId || '';
@@ -19,6 +24,8 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const messageType: string = msg.type || 'text';
     const fromMe: boolean = !!(msg.fromMe || msg.id?.fromMe);
     const isGroup: boolean = from.includes('@g.us') || from.includes('-');
+
+    console.log('[webhook] from:', from, '| fromMe:', fromMe, '| isGroup:', isGroup, '| body:', body.slice(0, 80));
 
     if (!from) return;
 
