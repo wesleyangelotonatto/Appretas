@@ -102,10 +102,10 @@ export function ajudarSufixo(g: Genero): string {
 // ─── Mensagens fixas com suporte a gênero ────────────────────────────────────
 
 export function SAUDACAO(g: Genero = 'N'): string {
-  return `Olá. Aqui é a Iara, secretária do Dr. Wesley Veiga. Estou disponível para receber sua mensagem e repassá-la ao Dr. Wesley. Como posso ${ajudarSufixo(g)}?`;
+  return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou disponível para receber sua mensagem e repassá-la ao Dr. Wesley. Como posso ${ajudarSufixo(g)}?`;
 }
 
-export const MSG_FORA_HORARIO = `Aqui é a secretária do doutor Wesley. Ele trabalha em horário comercial (08:30 às 17:00 - Seg a Sex). Em casos graves como prisão, acidente ou busca e apreensão, ligue várias vezes no telefone do Dr. Wesley diretamente. Caso contrário, retornaremos na próxima janela de atendimento ou me conta aqui o que precisa.`;
+export const MSG_FORA_HORARIO = `Aqui é a *secretária* do doutor Wesley. Ele trabalha em horário comercial (08:30 às 17:00 - Seg a Sex). Em casos graves como prisão, acidente ou busca e apreensão, ligue várias vezes no telefone do Dr. Wesley diretamente. Caso contrário, retornaremos na próxima janela de atendimento ou me conta aqui o que precisa.`;
 
 export function MSG_ENCERRAMENTO(g: Genero = 'N'): string {
   return `Há mais alguma coisa em que eu possa ${ajudarSufixo(g)} ou repassar ao Dr. Wesley?`;
@@ -113,15 +113,15 @@ export function MSG_ENCERRAMENTO(g: Genero = 'N'): string {
 
 export const MSG_PROCESSO_NAO_ENCONTRADO = `Estou verificando o andamento com o Dr. Wesley e retorno em breve.`;
 
-export const MSG_URGENCIA_AGUARDAR = `Sua mensagem foi recebida e estou verificando com o Dr. Wesley. Retornaremos em breve.`;
+export const MSG_URGENCIA_AGUARDAR = `Sua mensagem foi recebida e a *Iara* está verificando com o Dr. Wesley. Retornaremos em breve.`;
 
-export const MSG_PEDIR_ADVOGADO = `Vou comunicar ao Dr. Wesley sua solicitação. Ele retornará assim que possível.`;
+export const MSG_PEDIR_ADVOGADO = `Vou comunicar ao Dr. Wesley sua solicitação. A *Iara* anotou e ele retornará assim que possível.`;
 
 export function MSG_RECUSA_SECRETARIA(g: Genero = 'N'): string {
-  return `Compreendo. Vou informar ao Dr. Wesley que ${tratamento(g)} deseja falar diretamente com ele. Assim que possível, ele entrará em contato.`;
+  return `Compreendo. A *Iara* vai informar ao Dr. Wesley que ${tratamento(g)} deseja falar diretamente com ele. Assim que possível, ele entrará em contato.`;
 }
 
-export const MSG_AMIGO = `Olá. Aqui é a Iara, secretária do Dr. Wesley. Parece que sua mensagem é de cunho pessoal — caso eu esteja enganada, por favor me corrija. Vou repassar ao Dr. Wesley para que ele retorne quando disponível.`;
+export const MSG_AMIGO = `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley. Parece que sua mensagem é de cunho pessoal. Caso eu esteja enganada, por favor me corrija. Vou repassar ao Dr. Wesley para que ele retorne quando disponível.`;
 
 export const MSG_NENHUMA_MOVIMENTACAO_IMPORTANTE = `Houve uma movimentação simples no processo, sem nada de urgente. Estamos avisando para que saiba que ele está andando normalmente.`;
 
@@ -157,6 +157,13 @@ export function aplicarGlossario(texto: string): string {
     const regex = new RegExp(`\\b${proibido}\\b`, 'gi');
     resultado = resultado.replace(regex, correto);
   }
+  // Remove travessões e substitui por vírgula
+  resultado = resultado.replace(/\s*—\s*/g, ', ');
+  // Aplica negrito ao nome Iara e ao cargo secretária (formato WhatsApp)
+  resultado = resultado.replace(/\bIara\b/g, '*Iara*');
+  resultado = resultado.replace(/\bsecretária\b/gi, '*secretária*');
+  // Evita negrito duplo (****Iara****)
+  resultado = resultado.replace(/\*{2,}(Iara|secretária)\*{2,}/gi, (_, w) => `*${w}*`);
   return resultado;
 }
 
@@ -187,9 +194,12 @@ REGRAS ABSOLUTAS (nunca violar):
 LINGUAGEM E TOM:
 - Tom formal e profissional, como secretária de escritório de advocacia conceituado
 - Nunca use emojis de nenhum tipo
+- Nunca use travessão (—) em nenhuma circunstância; use vírgula ou ponto
 - Nunca use gírias, expressões informais, abreviações ou linguagem coloquial
 - Nunca use: "né", "tá", "pra", "vc", "rsrs", "haha", "tudo bem?", "oi!"
 - Nunca termine frases com "tá bem?", "ok?" ou similares
+- Ao se referir a si mesma, escreva sempre *Iara* (com asteriscos para negrito no WhatsApp)
+- Ao mencionar seu cargo, escreva sempre *secretária* (com asteriscos para negrito no WhatsApp)
 - Empática e acolhedora, mas sempre dentro do decoro profissional
 
 GLOSSÁRIO OBRIGATÓRIO:

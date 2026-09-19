@@ -126,9 +126,10 @@
 
 <header>
   <div class="status-dot" id="conn-dot" style="background:var(--red)"></div>
-  <h1>🌿 Iara — Secretária Virtual</h1>
+  <h1>Iara — Secretária Virtual</h1>
   <span id="mode-badge" class="mode-badge">MODO TREINO</span>
-  <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">🌴 Ausência</button>
+  <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
+  <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
   <div class="integration-status">
     <div class="int-item"><div class="int-dot ok" id="dot-waspeed"></div> Waspeed</div>
     <div class="int-item"><div class="int-dot ok" id="dot-trello"></div> Trello</div>
@@ -140,7 +141,7 @@
 <!-- Modal Ausência -->
 <div class="modal-overlay" id="modal-ausencia">
   <div class="modal">
-    <h3>🌴 Modo Ausência</h3>
+    <h3>Modo Ausencia</h3>
     <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px;">Enquanto ativo, Iara responde com esta mensagem para TODOS os contatos, independente de horário.</p>
     <label>Mensagem de ausência</label>
     <textarea id="ausencia-msg" rows="4" placeholder="Ex: Estou em férias até 30/09. Para emergências, ligue (44) 98859-6158. Retorno imediatamente após."></textarea>
@@ -170,15 +171,18 @@
         <p id="chat-phone" style="color:var(--text-muted)"></p>
       </div>
       <div class="chat-actions" id="chat-actions" style="display:none">
-        <button class="btn btn-pause" onclick="pauseContact()">⏸ Pausar</button>
-        <button class="btn btn-doc" onclick="openDocModal()">📎 Documento</button>
-        <button class="btn btn-followup" onclick="openFollowUpModal()">🔄 Follow-up</button>
-        <button class="btn btn-takeover" id="btn-takeover" onclick="toggleTakeover()">🎙 Assumir</button>
+        <button class="btn btn-pause" onclick="pauseContact()">Pausar</button>
+        <button class="btn btn-doc" onclick="openDocModal()">Documento</button>
+        <button class="btn btn-followup" onclick="openFollowUpModal()">Follow-up</button>
+        <button class="btn btn-takeover" id="btn-takeover" onclick="toggleTakeover()">Assumir</button>
       </div>
     </div>
 
     <div class="approvals-section" id="approvals-section">
-      <h4>⚠ Aguardando aprovação antes de enviar</h4>
+      <h4 style="display:flex;align-items:center;justify-content:space-between;">
+        Aguardando aprovacao antes de enviar
+        <button onclick="verTodosRascunhos()" style="font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer;">Ver todos</button>
+      </h4>
       <div id="approvals-list"></div>
     </div>
 
@@ -220,7 +224,7 @@
 <!-- ── MODAL: ENVIO DE DOCUMENTO ── -->
 <div class="modal-overlay" id="modal-doc">
   <div class="modal">
-    <h3>📎 Enviar Documento</h3>
+    <h3>Enviar Documento</h3>
     <label>URL do documento (Google Drive, Dropbox, etc.)</label>
     <input type="url" id="doc-url" placeholder="https://drive.google.com/..." />
     <label>Legenda (opcional)</label>
@@ -236,7 +240,7 @@
 <!-- ── MODAL: FOLLOW-UP ── -->
 <div class="modal-overlay" id="modal-followup">
   <div class="modal">
-    <h3>🔄 Follow-up</h3>
+    <h3>Follow-up</h3>
 
     <label>Mensagem inicial</label>
     <textarea id="fu-message" placeholder="Ex: Olá! Passando para verificar se conseguiu reunir a documentação. Qualquer dúvida estou à disposição."></textarea>
@@ -341,11 +345,12 @@
   }
 
   function statusLabel(s) {
-    return {ativo:'🤖 IA respondendo',takeover:'🎙 Takeover ativo',pausado:'⏸ Pausado',encerrado:'✓ Encerrado'}[s]||s;
+    return {ativo:'IA respondendo',takeover:'Takeover ativo',pausado:'Pausado',encerrado:'Encerrado'}[s]||s;
   }
 
   function selectConv(phone) {
     activePhone = phone;
+    showAllApprovals = false;
     renderConvList();
     renderMessages();
     updateChatHeader();
@@ -358,7 +363,7 @@
     document.getElementById('chat-name').textContent = conv.name || activePhone;
     document.getElementById('chat-phone').textContent = activePhone + (conv.processes?.length ? ` • Processos: ${conv.processes.join(', ')}` : '');
     const btn = document.getElementById('btn-takeover');
-    btn.textContent = conv.status === 'takeover' ? '↩ Devolver à IA' : '🎙 Assumir';
+    btn.textContent = conv.status === 'takeover' ? 'Devolver a IA' : 'Assumir';
     btn.className = 'btn ' + (conv.status === 'takeover' ? 'btn-handback' : 'btn-takeover');
     document.getElementById('takeover-bar').className = 'takeover-bar' + (conv.status === 'takeover' ? ' active' : '');
   }
@@ -378,10 +383,30 @@
     renderApprovals();
   }
 
+  let showAllApprovals = false;
+
+  function verTodosRascunhos() {
+    showAllApprovals = true;
+    activePhone = null;
+    renderConvList();
+    document.getElementById('messages').innerHTML = '<div class="empty-chat">Selecione uma conversa</div>';
+    document.getElementById('chat-actions').style.display = 'none';
+    document.getElementById('chat-name').textContent = 'Todos os rascunhos';
+    document.getElementById('chat-phone').textContent = '';
+    renderApprovals();
+  }
+
   function renderApprovals() {
     const section = document.getElementById('approvals-section');
     const list = document.getElementById('approvals-list');
-    const filtered = activePhone ? pendingApprovals.filter(a => a.phone === activePhone) : pendingApprovals;
+    const filtered = (showAllApprovals || !activePhone) ? pendingApprovals : pendingApprovals.filter(a => a.phone === activePhone);
+    // Botão global no header
+    const countBtn = document.getElementById('btn-all-approvals');
+    const countSpan = document.getElementById('all-approvals-count');
+    if (countBtn && countSpan) {
+      countSpan.textContent = String(pendingApprovals.length);
+      countBtn.style.display = pendingApprovals.length > 0 ? 'inline-block' : 'none';
+    }
     if (!filtered.length) { section.className = 'approvals-section'; return; }
     section.className = 'approvals-section has-items';
     list.innerHTML = filtered.map(a => `
@@ -390,10 +415,10 @@
         <div class="draft-text" id="draft-text-${a.id}">${escHtml(a.draft)}</div>
         <textarea class="edit-area" id="edit-${a.id}">${escHtml(a.draft)}</textarea>
         <div class="approval-actions">
-          <button class="btn btn-approve" onclick="approveResponse(${a.id},'${a.phone}')">✓ Aprovar e Enviar</button>
-          <button class="btn btn-pause" onclick="showEdit(${a.id})">✎ Editar</button>
-          <button class="btn btn-approve" onclick="approveEdited(${a.id},'${a.phone}')" id="send-edited-${a.id}" style="display:none">✓ Enviar Editado</button>
-          <button class="btn btn-danger" onclick="discardApproval(${a.id})">✕ Descartar</button>
+          <button class="btn btn-approve" onclick="approveResponse(${a.id},'${a.phone}')">Aprovar e Enviar</button>
+          <button class="btn btn-pause" onclick="showEdit(${a.id})">Editar</button>
+          <button class="btn btn-approve" onclick="approveEdited(${a.id},'${a.phone}')" id="send-edited-${a.id}" style="display:none">Enviar Editado</button>
+          <button class="btn btn-danger" onclick="discardApproval(${a.id})">Descartar</button>
         </div>
       </div>
     `).join('');
@@ -540,12 +565,12 @@
           ${fu.status!=='concluido'?`
             <div class="fu-actions">
               ${fu.status==='ativo'
-                ?`<button class="btn btn-pause" onclick="pauseFollowUp(${fu.id},'pausado')">⏸ Pausar</button>`
+                ?`<button class="btn btn-pause" onclick="pauseFollowUp(${fu.id},'pausado')">Pausar</button>`
                 :``}
               ${fu.status==='pausado'
-                ?`<button class="btn btn-approve" onclick="pauseFollowUp(${fu.id},'ativo')">▶ Retomar</button>`
+                ?`<button class="btn btn-approve" onclick="pauseFollowUp(${fu.id},'ativo')">Retomar</button>`
                 :``}
-              <button class="btn btn-danger" onclick="cancelFollowUp(${fu.id})">✕ Encerrar</button>
+              <button class="btn btn-danger" onclick="cancelFollowUp(${fu.id})">Encerrar</button>
             </div>`:''}
         </div>
       `).join('');
@@ -631,10 +656,10 @@
     const btn = document.getElementById('btn-ausencia');
     if (ausenciaAtiva) {
       btn.style.background = '#c0392b'; btn.style.borderColor = '#c0392b'; btn.style.color = '#fff';
-      btn.textContent = '🔴 AUSÊNCIA ATIVA';
+      btn.textContent = 'AUSENCIA ATIVA';
     } else {
       btn.style.background = '#2d1a00'; btn.style.borderColor = '#e67e22'; btn.style.color = '#e67e22';
-      btn.textContent = '🌴 Ausência';
+      btn.textContent = 'Ausencia';
     }
   }
 

@@ -5,7 +5,7 @@ import {
   saveMessage, upsertSession, getHistory, scheduleFollowUp,
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
-  getSetting, setSetting,
+  getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -38,6 +38,13 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
   }
 
   try {
+    // Detecta se houve edição e salva para treinamento
+    const approvals = getPendingApprovals();
+    const original = approvals.find((a: any) => a.id === id);
+    if (original && original.draft !== draft) {
+      saveCorrection(phone, original.draft, draft, original.context);
+    }
+
     await sendMessage(phone, draft);
     saveMessage(phone, 'iara', draft);
     deletePendingApproval(id);

@@ -91,6 +91,15 @@ export async function initDb(): Promise<void> {
       updated_at INTEGER DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS corrections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      original TEXT NOT NULL,
+      corrected TEXT NOT NULL,
+      context TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
@@ -138,6 +147,11 @@ export function getPendingApprovals() {
 
 export function deletePendingApproval(id: number) {
   getDb().prepare('DELETE FROM pending_approvals WHERE id = ?').run(id);
+}
+
+export function saveCorrection(phone: string, original: string, corrected: string, context?: string) {
+  getDb().prepare('INSERT INTO corrections (phone, original, corrected, context) VALUES (?, ?, ?, ?)')
+    .run(phone, original, corrected, context || null);
 }
 
 export function isBlacklisted(phone: string): boolean {
