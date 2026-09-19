@@ -1,7 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { parseCommand } from '../responder/claude';
-import { sendMessage } from '../responder/send';
-import { saveMessage, upsertSession, getHistory, scheduleFollowUp, setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval } from '../memory/db';
+import { sendMessage, sendFile } from '../responder/send';
+import {
+  saveMessage, upsertSession, getHistory, scheduleFollowUp,
+  setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
+  createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
+} from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
 import { saveConversationSummary } from '../integrations/drive';
@@ -27,6 +31,11 @@ commandRouter.post('/', async (req: Request, res: Response) => {
 commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   const { draft, phone } = req.body;
+
+  if (draft === '__DISCARD__') {
+    deletePendingApproval(id);
+    return res.json({ ok: true, discarded: true });
+  }
 
   try {
     await sendMessage(phone, draft);
@@ -76,6 +85,66 @@ commandRouter.post('/send', async (req, res) => {
   }
 });
 
+// POST /command/send-document — envia documento ao contato
+commandRouter.post('/send-document', async (req: Request, res: Response) => {
+  const { phone, url, caption } = req.body;
+  if (!phone || !url) return res.status(400).json({ error: 'Informe phone e url' });
+
+  try {
+    await sendFile(phone, url, caption || '');
+    saveMessage(phone, 'iara', `[Documento enviado] ${caption || url}`);
+    req.app.locals.io?.emit('message', {
+      phone, role: 'iara',
+      body: `📎 Documento: ${caption || url}`,
+      timestamp: Date.now()
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// ─── Follow-ups v2 ────────────────────────────────────────────────────────────
+
+// POST /command/followup — cria follow-up
+commandRouter.post('/followup', (req: Request, res: Response) => {
+  const { phone, message, startDate, recurrenceDays, stopCondition, stopDate } = req.body;
+  if (!phone || !message || !startDate) return res.status(400).json({ error: 'Informe phone, message e startDate' });
+
+  const id = createFollowUpV2({
+    phone,
+    message,
+    nextSendAt: new Date(startDate),
+    recurrenceDays: recurrenceDays || 0,
+    stopCondition: stopCondition || 'manual',
+    stopDate: stopDate ? new Date(stopDate) : undefined,
+  });
+
+  req.app.locals.io?.emit('followup_created', { id, phone, message, recurrenceDays, stopCondition });
+  console.log(`[followup] criado id=${id} para ${phone}`);
+  res.json({ ok: true, id });
+});
+
+// GET /command/followup/:phone — lista follow-ups de um contato
+commandRouter.get('/followup/:phone', (req: Request, res: Response) => {
+  res.json(getFollowUpsForPhone(req.params.phone));
+});
+
+// POST /command/followup/:id/cancel — encerra follow-up
+commandRouter.post('/followup/:id/cancel', (req: Request, res: Response) => {
+  updateFollowUpV2Status(parseInt(req.params.id), 'concluido');
+  req.app.locals.io?.emit('followup_updated', { id: req.params.id, status: 'concluido' });
+  res.json({ ok: true });
+});
+
+// POST /command/followup/:id/pause — pausa ou retoma follow-up
+commandRouter.post('/followup/:id/pause', (req: Request, res: Response) => {
+  const { status } = req.body; // 'pausado' ou 'ativo'
+  updateFollowUpV2Status(parseInt(req.params.id), status || 'pausado');
+  req.app.locals.io?.emit('followup_updated', { id: req.params.id, status });
+  res.json({ ok: true });
+});
+
 async function executeCommand(parsed: any, io: any): Promise<any> {
   const { action, params } = parsed;
 
@@ -120,11 +189,6 @@ async function executeCommand(parsed: any, io: any): Promise<any> {
       scheduledAt.setDate(scheduledAt.getDate() + (params.days || 3));
       scheduleFollowUp(params.phone, params.message, scheduledAt);
       return { scheduled: scheduledAt.toLocaleDateString('pt-BR') };
-    }
-
-    case 'day_summary': {
-      const today = Math.floor(Date.now() / 1000) - 86400;
-      return { message: 'Resumo disponível no painel' };
     }
 
     default:

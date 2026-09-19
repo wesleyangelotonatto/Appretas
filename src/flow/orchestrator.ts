@@ -1,5 +1,5 @@
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction } from '../memory/db';
+import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -27,7 +27,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // 1. Blacklist
     if (isBlacklisted(phone)) return;
 
-    // 2. Verifica horário de atendimento
+    // 2. Cancela follow-ups com condição 'reply' ao receber resposta do cliente
+    cancelFollowUpsOnReply(phone);
+
+    // 3. Verifica horário de atendimento
     if (!isWithinBusinessHours()) {
       await sendMessage(phone, MSG_FORA_HORARIO);
       saveMessage(phone, 'iara', MSG_FORA_HORARIO);
@@ -35,20 +38,18 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
-    // 3. Sessão existente
+    // 4. Sessão existente
     const session = getSession(phone);
 
-    // Se em takeover, apenas notifica o painel
     if (session?.status === 'takeover') {
       saveMessage(phone, 'client', body);
       io?.emit('message', { phone, role: 'client', body, timestamp: Date.now(), takeover: true });
       return;
     }
 
-    // Se pausado, ignora
     if (session?.status === 'pausado') return;
 
-    // 4. Transcreve áudio se necessário
+    // 5. Transcreve áudio se necessário
     let textBody = body;
     if (messageType === 'audio' || messageType === 'ptt') {
       if (mediaUrl) {
@@ -59,11 +60,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       }
     }
 
-    // 5. Detecta múltiplas mensagens rápidas (debounce simples)
     saveMessage(phone, 'client', textBody, mediaUrl);
     io?.emit('message', { phone, role: 'client', body: textBody, mediaUrl, timestamp: Date.now() });
 
-    // 6. Detecta urgência pelo conteúdo
+    // 6. Detecta urgência
     const urgencyKeywords = ['urgente', 'urgência', 'preso', 'presa', 'mandado', 'busca e apreensão', 'acidente', 'socorro', 'emergência'];
     const isUrgent = urgencyKeywords.some(k => textBody.toLowerCase().includes(k));
     if (isUrgent) {
@@ -82,7 +82,6 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     const trelloContact = sheetsContact ? null : await lookupTrello(phone);
     const contact = sheetsContact || trelloContact;
 
-    // Instrução específica para este contato
     const customInstruction = getContactInstruction(phone);
 
     // 9. Classificação via Claude Haiku
@@ -95,7 +94,6 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       customInstruction,
     });
 
-    // Atualiza sessão
     upsertSession(phone, {
       name: contact?.name || session?.name || 'Desconhecido',
       type: classification.type,
@@ -110,14 +108,12 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       timestamp: Date.now(),
     });
 
-    // 10. Primeira mensagem do dia → saudação (se não tem sessão ativa)
     const isFirstMessage = !session;
     if (isFirstMessage && classification.type !== 'PROCESSO_ATIVO') {
       await deliverOrQueue(phone, SAUDACAO, 'saudação inicial', io, contact?.name || 'Desconhecido');
       return;
     }
 
-    // 11. Resposta por tipo
     let draft = '';
     let context = '';
 
@@ -127,50 +123,31 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     } else {
       switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
-          const djenData = contact?.processes?.length
-            ? await consultarDjen(contact.processes[0])
-            : null;
-          const trelloCard = contact?.processes?.length
-            ? await buscarCardTrello(contact.processes[0])
-            : null;
-
+          const djenData = contact?.processes?.length ? await consultarDjen(contact.processes[0]) : null;
+          const trelloCard = contact?.processes?.length ? await buscarCardTrello(contact.processes[0]) : null;
           context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, customInstruction });
           draft = await draftResponse(classification.type, textBody, context);
           break;
         }
-
         case 'NOVO_CASO_CLIENTE_ANTIGO': {
           context = JSON.stringify({ contact, intent: classification.intent, customInstruction });
           draft = await draftResponse(classification.type, textBody, context);
-          await criarCardLead({
-            name: contact?.name || phone,
-            phone,
-            summary: classification.intent,
-            type: 'NOVO_CASO_CLIENTE_ANTIGO',
-          });
+          await criarCardLead({ name: contact?.name || phone, phone, summary: classification.intent, type: 'NOVO_CASO_CLIENTE_ANTIGO' });
           io?.emit('alert', { phone, type: 'novo_caso', message: `Novo caso de cliente antigo: ${contact?.name || phone}` });
           break;
         }
-
         case 'LEAD_NOVO': {
           context = JSON.stringify({ phone, intent: classification.intent, customInstruction });
           draft = await draftResponse(classification.type, textBody, context);
-          await criarCardLead({
-            name: phone,
-            phone,
-            summary: classification.intent,
-            type: 'LEAD_NOVO',
-          });
+          await criarCardLead({ name: phone, phone, summary: classification.intent, type: 'LEAD_NOVO' });
           io?.emit('alert', { phone, type: 'lead_novo', message: `Novo lead: ${phone} — ${classification.intent}` });
           break;
         }
-
         case 'AMIGO_PESSOAL': {
           draft = 'Oi! Aqui é a Iara Secretária do Doutor Wesley. Pelo que vi o assunto não é sobre questões jurídicas né rsrs, se eu estiver errada, me corrija. Wesley está em atendimento agora, mas vou repassar a mensagem pra ele pra te retornar.';
           io?.emit('alert', { phone, type: 'amigo', message: `Mensagem pessoal de ${contact?.name || phone}`, priority: 'low' });
           break;
         }
-
         case 'NEGOCIO_PARTICULAR':
         case 'INSTITUCIONAL': {
           context = JSON.stringify({ contact, type: classification.type, intent: classification.intent, customInstruction });
@@ -179,7 +156,6 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           io?.emit('alert', { phone, type: classification.type.toLowerCase(), message: `${classification.type}: ${contact?.name || phone}`, priority });
           break;
         }
-
         default: {
           draft = SAUDACAO;
           io?.emit('alert', { phone, type: 'desconhecido', message: `Contato desconhecido: ${phone}` });
@@ -211,7 +187,6 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
     io?.emit('message', { phone, role: 'iara', body: draft, timestamp: Date.now() });
   }
 
-  // Detecta agendamento na resposta da Iara
   detectAppointment(phone, draft, contactName, io).catch(() => {});
 }
 
@@ -219,7 +194,6 @@ function isWithinBusinessHours(): boolean {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
   const day = now.getDay();
   const hour = now.getHours();
-
   if (day === 0) return false;
   if (day === 6) return hour >= HORARIO_ATENDIMENTO.sabado.inicio && hour < HORARIO_ATENDIMENTO.sabado.fim;
   return hour >= HORARIO_ATENDIMENTO.semana.inicio && hour < HORARIO_ATENDIMENTO.semana.fim;

@@ -23,8 +23,8 @@ export async function initDb(): Promise<void> {
     CREATE TABLE IF NOT EXISTS sessions (
       phone TEXT PRIMARY KEY,
       name TEXT,
-      type TEXT,          -- PROCESSO_ATIVO | NOVO_CASO | LEAD_NOVO | NEGOCIO | AMIGO | INSTITUCIONAL | DESCONHECIDO
-      status TEXT DEFAULT 'ativo', -- ativo | takeover | pausado | encerrado
+      type TEXT,
+      status TEXT DEFAULT 'ativo',
       created_at INTEGER DEFAULT (unixepoch()),
       updated_at INTEGER DEFAULT (unixepoch())
     );
@@ -32,8 +32,8 @@ export async function initDb(): Promise<void> {
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
-      role TEXT NOT NULL,  -- client | iara | wesley
-      body TEXT NOT NULL,  -- criptografado em prod: Base64(AES)
+      role TEXT NOT NULL,
+      body TEXT NOT NULL,
       media_url TEXT,
       created_at INTEGER DEFAULT (unixepoch())
     );
@@ -52,6 +52,18 @@ export async function initDb(): Promise<void> {
       message TEXT NOT NULL,
       scheduled_at INTEGER NOT NULL,
       sent INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS follow_ups_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      message TEXT NOT NULL,
+      next_send_at INTEGER NOT NULL,
+      recurrence_days INTEGER DEFAULT 0,
+      stop_condition TEXT DEFAULT 'manual',
+      stop_date INTEGER,
+      status TEXT DEFAULT 'ativo',
+      created_at INTEGER DEFAULT (unixepoch())
     );
 
     CREATE TABLE IF NOT EXISTS blacklist (
@@ -76,6 +88,7 @@ export async function initDb(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
+    CREATE INDEX IF NOT EXISTS idx_fup2_next ON follow_ups_v2(next_send_at, status);
   `);
 
   console.log('[db] banco inicializado:', DB_PATH);
@@ -151,6 +164,68 @@ export function getDueFollowUps() {
 
 export function markFollowUpSent(id: number) {
   getDb().prepare('UPDATE follow_ups SET sent = 1 WHERE id = ?').run(id);
+}
+
+// ─── Follow-ups v2 (com recorrência e condições de parada) ───────────────────
+
+export interface FollowUpV2 {
+  id: number;
+  phone: string;
+  message: string;
+  next_send_at: number;
+  recurrence_days: number;
+  stop_condition: 'date' | 'reply' | 'document' | 'manual';
+  stop_date: number | null;
+  status: 'ativo' | 'pausado' | 'concluido';
+  created_at: number;
+}
+
+export function createFollowUpV2(params: {
+  phone: string;
+  message: string;
+  nextSendAt: Date;
+  recurrenceDays: number;
+  stopCondition: FollowUpV2['stop_condition'];
+  stopDate?: Date;
+}): number {
+  const r = getDb().prepare(`
+    INSERT INTO follow_ups_v2 (phone, message, next_send_at, recurrence_days, stop_condition, stop_date)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    params.phone,
+    params.message,
+    Math.floor(params.nextSendAt.getTime() / 1000),
+    params.recurrenceDays,
+    params.stopCondition,
+    params.stopDate ? Math.floor(params.stopDate.getTime() / 1000) : null
+  );
+  return r.lastInsertRowid as number;
+}
+
+export function getDueFollowUpsV2(): FollowUpV2[] {
+  const now = Math.floor(Date.now() / 1000);
+  return getDb().prepare(`
+    SELECT * FROM follow_ups_v2
+    WHERE status = 'ativo' AND next_send_at <= ?
+  `).all(now) as FollowUpV2[];
+}
+
+export function getFollowUpsForPhone(phone: string): FollowUpV2[] {
+  return getDb().prepare('SELECT * FROM follow_ups_v2 WHERE phone = ? ORDER BY created_at DESC').all(phone) as FollowUpV2[];
+}
+
+export function rescheduleFollowUpV2(id: number, nextSendAt: Date) {
+  getDb().prepare('UPDATE follow_ups_v2 SET next_send_at = ? WHERE id = ?')
+    .run(Math.floor(nextSendAt.getTime() / 1000), id);
+}
+
+export function updateFollowUpV2Status(id: number, status: FollowUpV2['status']) {
+  getDb().prepare('UPDATE follow_ups_v2 SET status = ? WHERE id = ?').run(status, id);
+}
+
+export function cancelFollowUpsOnReply(phone: string) {
+  getDb().prepare(`UPDATE follow_ups_v2 SET status = 'concluido' WHERE phone = ? AND status = 'ativo' AND stop_condition = 'reply'`)
+    .run(phone);
 }
 
 export function purgeOldMessages(days = 90) {

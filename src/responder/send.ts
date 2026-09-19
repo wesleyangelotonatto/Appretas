@@ -5,7 +5,6 @@ const TOKEN = () => process.env.WASPEED_TOKEN || '';
 
 export async function sendMessage(phone: string, text: string): Promise<void> {
   try {
-    // Classic Wascript API: POST /api/enviar-texto/{TOKEN}
     await axios.post(`${API_URL()}/api/enviar-texto/${TOKEN()}`, {
       phone,
       message: text,
@@ -27,9 +26,21 @@ export async function sendAudio(phone: string, audioUrl: string): Promise<void> 
   }
 }
 
+export async function sendFile(phone: string, fileUrl: string, caption?: string): Promise<void> {
+  try {
+    await axios.post(`${API_URL()}/api/enviar-arquivo/${TOKEN()}`, {
+      phone,
+      url: fileUrl,
+      caption: caption || '',
+    });
+  } catch (err: any) {
+    console.error('[send] erro ao enviar arquivo:', err?.response?.data || err.message);
+    throw err;
+  }
+}
+
 export async function createNote(phone: string, note: string): Promise<void> {
   try {
-    // POST /api/criar-nota/{TOKEN} — cria nota no contato do Waspeed
     await axios.post(`${API_URL()}/api/criar-nota/${TOKEN()}`, {
       phone,
       note,
