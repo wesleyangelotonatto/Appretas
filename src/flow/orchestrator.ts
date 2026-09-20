@@ -190,11 +190,13 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       customInstruction,
     });
 
-    // Nome de exibição no painel: prioriza nome do WhatsApp/sessão; só usa nome de lookup (Trello/Sheets)
-    // se parecer um nome de pessoa de verdade (evita mostrar título de card como "REQUERIMENTO... ESPÓLIO DE...")
+    // Nome de exibição no painel: replica o que aparece no WhatsApp.
+    // Prioridade: nome do WhatsApp (fresco a cada mensagem, é o que o cliente vê salvo/pushname) >
+    // nome de sessão já validado anteriormente > nome de lookup (Trello/Sheets) só se parecer nome de pessoa >
+    // número do telefone (nunca o título de um card do Trello)
     const lookupName = (contact as any)?.displayName || contact?.name || '';
-    const lookupNameIsPerson = isLikelyPersonName(lookupName);
-    const displayName = session?.name || waName || (lookupNameIsPerson ? lookupName : '') || phone;
+    const candidatos = [waName, session?.name, lookupName];
+    const displayName = candidatos.find(n => isLikelyPersonName(n || '')) || phone;
 
     upsertSession(phone, {
       name: displayName,

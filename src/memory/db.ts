@@ -106,7 +106,24 @@ export async function initDb(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_fup2_next ON follow_ups_v2(next_send_at, status);
   `);
 
+  limparNomesContaminados();
   console.log('[db] banco inicializado:', DB_PATH);
+}
+
+// Corrige sessões salvas antes da correção do lookup do Trello, que armazenaram
+// o título do card (ex: "REQUERIMENTO... ESPÓLIO DE...") como nome do contato.
+// Reseta para o telefone; o nome correto do WhatsApp será aplicado na próxima mensagem.
+function limparNomesContaminados() {
+  const TITULO_CASO_RE = /processo|requerimento|apresenta[cç][aã]o|esp[oó]lio|execu[cç][aã]o|embargos|a[cç][aã]o\b|mandado|recurso|apela[cç][aã]o|invent[aá]rio|cumprimento de senten[cç]a|habilita[cç][aã]o| - | x /i;
+  const sessions = getDb().prepare('SELECT phone, name FROM sessions').all() as Array<{ phone: string; name: string | null }>;
+  let corrigidos = 0;
+  for (const s of sessions) {
+    if (s.name && (TITULO_CASO_RE.test(s.name) || /\d{4,}/.test(s.name) || s.name.length > 60)) {
+      getDb().prepare('UPDATE sessions SET name = ? WHERE phone = ?').run(s.phone, s.phone);
+      corrigidos++;
+    }
+  }
+  if (corrigidos > 0) console.log(`[db] ${corrigidos} nome(s) de contato contaminado(s) por título de caso foram corrigidos`);
 }
 
 export function getSession(phone: string) {
