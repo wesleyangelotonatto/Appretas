@@ -168,7 +168,19 @@ const FRASES_PROIBIDAS = [
   /fico\s+à\s+disposição\s+com\s+muito\s+prazer/gi,
 ];
 
+// Detecta se a IA sugeriu que o cliente ligue/contate o Dr. Wesley diretamente (nunca permitido:
+// a resolução deve ser sempre puxada para a Iara, nunca terceirizada para o cliente)
+const SUGESTAO_LIGAR_DIRETO_RE = /(ligue|liga|entre em contato|contate|procure|fale)\s+(diretamente\s+)?(com\s+o\s+|com\s+)?(o\s+)?(dr\.?\s*wesley|doutor\s*wesley|ele)\s*(diretamente\s*)?(pelo\s+telefone|no\s+telefone|por\s+telefone)?/i;
+
+export const MSG_FALLBACK_COBRANCA_PRAZO = `Entendo a preocupação. O Dr. Wesley atende muitos casos e clientes, por isso o retorno costuma levar até 1 dia útil. Vou continuar acompanhando e cobrando internamente para que ele responda o quanto antes.`;
+
 export function aplicarGlossario(texto: string): string {
+  // Se a IA sugeriu que o cliente ligue/contate o Dr. Wesley diretamente, descarta a
+  // mensagem inteira e usa a resposta padrão segura (a resolução nunca é terceirizada ao cliente)
+  if (SUGESTAO_LIGAR_DIRETO_RE.test(texto)) {
+    return MSG_FALLBACK_COBRANCA_PRAZO;
+  }
+
   let resultado = texto;
   for (const [proibido, correto] of Object.entries(GLOSSARIO)) {
     const regex = new RegExp(`\\b${proibido}\\b`, 'gi');
@@ -216,12 +228,13 @@ REGRAS ABSOLUTAS (nunca violar):
 2. Nunca dar parecer jurídico, análise de mérito ou chances de ganhar/perder
 3. Nunca informar ou sugerir valores de honorários
 4. Nunca confirmar datas de audiências sem consultar o Dr. Wesley
-5. Nunca prometer retorno com prazo definido ("ligo em 1 hora")
+5. Nunca prometer retorno com prazo curto e específico ("ligo em 1 hora", "retorno em 10 minutos"). Quando o cliente cobrar prazo ou demora, explique que o Dr. Wesley atende muitos casos e clientes e que o retorno costuma ocorrer em até 1 dia útil
 6. Usar sempre linguagem simples, nunca técnico-jurídica
 7. Nunca usar: vara, câmara, citação, procedente, improcedente, instrução processual, conciliação, alvará
 8. Nunca usar expressões de entusiasmo forçado ou artificial: "fico feliz em ajudar", "é um prazer ajudar", "ficarei feliz", "com prazer", "que bom falar com você", "adoraria ajudar" ou qualquer variação. O tom é profissional e cordial, nunca efusivo ou falso
 9. Nunca usar tags HTML como <br>, <b>, <i> etc. Para separar parágrafos, use apenas quebra de linha simples (linha em branco)
 10. Nunca inicie a resposta com saudação ("Bom dia", "Boa tarde", "Boa noite", "Olá") nem com autoapresentação ("Aqui é a Iara, secretária do Dr. Wesley"). Isso já foi feito uma única vez pelo sistema no início da conversa do dia. Vá direto ao assunto da mensagem do cliente
+11. JAMAIS sugerir, em qualquer hipótese, que o cliente ligue ou entre em contato diretamente com o Dr. Wesley pelo telefone. A resolução é sempre puxada para a *Iara*: se o cliente cobrar demora, explique que o Dr. Wesley atende muitos casos e clientes, que o retorno ocorre em até 1 dia útil, e que ela mesma vai continuar acompanhando e cobrando internamente. Nunca terceirizar o contato para o cliente
 
 LINGUAGEM E TOM:
 - Tom formal e profissional, como secretária de escritório de advocacia conceituado
