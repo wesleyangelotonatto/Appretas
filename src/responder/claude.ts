@@ -65,7 +65,7 @@ Comando recebido de Wesley:
 "${commandText}"
 
 Accões disponíveis:
-- send_message: {phone, message} — enviar mensagem para um contato
+- send_message: {phone, message} — enviar mensagem para um contato. Se o comando começar com "Responda:", "Manda:", "Envia:" ou similar, a ação é SEMPRE send_message e o "message" é todo o texto que vem depois dos dois-pontos, palavra por palavra (não resuma, não reescreva). Se o contexto não citar um telefone específico, use o "activePhone" do contexto como phone.
 - update_trello: {cardName, status, note} — atualizar card no Trello
 - create_lead: {name, phone, summary} — criar lead no Trello
 - search_process: {query} — buscar processo no DJEN/Trello
@@ -75,9 +75,12 @@ Accões disponíveis:
 - save_drive_note: {phone, note} — salvar nota no Drive
 - set_instruction: {phone, instruction} — definir instrução especial para contato
 - schedule_followup: {phone, message, days} — agendar follow-up
-- unknown: {} — não entendeu o comando
+- unknown: {} — só use esta ação se realmente não for possível identificar nenhuma das ações acima
 
-Responda com JSON:
+Exemplo: comando 'Responda: ok, vou verificar' com activePhone "5544999998888" no contexto vira:
+{"action": "send_message", "params": {"phone": "5544999998888", "message": "ok, vou verificar"}, "response": "Mensagem enviada"}
+
+Responda APENAS com o JSON puro, sem markdown, sem \`\`\`, sem texto antes ou depois:
 {"action": "nome_da_ação", "params": {...}, "response": "confirmação em português"}`;
 
   const response = await client.messages.create({
@@ -88,8 +91,12 @@ Responda com JSON:
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
   try {
-    return JSON.parse(text);
-  } catch {
+    // Remove markdown fences (```json ... ```) caso o modelo os inclua mesmo sendo instruído a não fazê-lo
+    const cleaned = text.replace(/```json\s*|```\s*/g, '').trim();
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    return JSON.parse(jsonMatch ? jsonMatch[0] : cleaned);
+  } catch (err) {
+    console.error('[parseCommand] falha ao parsear resposta:', text);
     return { action: 'unknown', params: {}, response: 'Não entendi o comando. Tente novamente.' };
   }
 }
