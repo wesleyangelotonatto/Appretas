@@ -9,7 +9,7 @@ function auth() {
   return { key: KEY(), token: TOKEN() };
 }
 
-export async function lookupTrello(phone: string): Promise<{ name: string; phone: string; processes: string[] } | null> {
+export async function lookupTrello(phone: string): Promise<{ name: string; displayName: string; phone: string; processes: string[] } | null> {
   try {
     const normalizedPhone = phone.replace(/[^0-9]/g, '');
 
@@ -32,9 +32,10 @@ export async function lookupTrello(phone: string): Promise<{ name: string; phone
           normalizedPhone.includes(phoneInCard.slice(-8))
         ) {
           // Extrai nome do card (tenta descrição primeiro, depois título)
-          const name = extractNameFromCard(title, desc);
+          const displayName = extractNameFromCard(title, desc);
           const processes = extractProcessNumbers(desc);
-          return { name, phone: normalizedPhone, processes };
+          // name = título completo do card (para contexto do Claude); displayName = nome simples do cliente (para painel)
+          return { name: title, displayName, phone: normalizedPhone, processes };
         }
       }
     }

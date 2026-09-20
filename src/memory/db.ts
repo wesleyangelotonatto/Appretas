@@ -154,6 +154,11 @@ export function saveCorrection(phone: string, original: string, corrected: strin
     .run(phone, original, corrected, context || null);
 }
 
+export function getRecentCorrections(limit = 20): Array<{ original: string; corrected: string }> {
+  return getDb().prepare('SELECT original, corrected FROM corrections ORDER BY created_at DESC LIMIT ?')
+    .all(limit) as any[];
+}
+
 export function isBlacklisted(phone: string): boolean {
   return !!getDb().prepare('SELECT 1 FROM blacklist WHERE phone = ?').get(phone);
 }

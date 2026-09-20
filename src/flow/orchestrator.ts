@@ -112,9 +112,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     // 7. Informa horário fora do expediente (não bloqueia — atendimento 24h)
     if (!isWithinBusinessHours()) {
-      await sendMessage(phone, MSG_FORA_HORARIO);
-      saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-      io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+      await deliverOrQueue(phone, MSG_FORA_HORARIO, 'fora_horario', io);
     }
 
     // 8. Detecta urgência
@@ -177,26 +175,28 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       customInstruction,
     });
 
+    const displayName = (contact as any)?.displayName || contact?.name || session?.name || 'Desconhecido';
+
     upsertSession(phone, {
-      name: contact?.name || session?.name || 'Desconhecido',
+      name: displayName,
       type: classification.type,
       status: 'ativo',
     });
 
     io?.emit('session_update', {
       phone,
-      name: contact?.name || 'Desconhecido',
+      name: displayName,
       type: classification.type,
       processes: contact?.processes,
       timestamp: Date.now(),
     });
 
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
-    const generoFinal: Genero = detectarGenero(textBody, contact?.name || session?.name);
+    const generoFinal: Genero = detectarGenero(textBody, displayName);
 
     const isFirstMessage = !session;
     if (isFirstMessage && classification.type !== 'PROCESSO_ATIVO') {
-      await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, contact?.name || 'Desconhecido');
+      await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
       return;
     }
 

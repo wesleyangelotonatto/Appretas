@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { buildSystemPrompt, aplicarGlossario, type Genero } from '../persona';
+import { getRecentCorrections } from '../memory/db';
 import type { ClassificationType } from '../classifier/groq';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -33,10 +34,16 @@ MENSAGEM DO CLIENTE:
 
 Redija a resposta da Iara. Máximo 3 parágrafos curtos. Linguagem simples. Nunca dar parecer jurídico. Nunca mencionar valores.`;
 
+  const corrections = getRecentCorrections(20);
+  const correctionsSection = corrections.length > 0
+    ? `\n\nCORREÇÕES ANTERIORES (aprenda com estas edições de Wesley — prefira o estilo corrigido):\n` +
+      corrections.map((c, i) => `${i + 1}. Original: "${c.original.slice(0, 120)}"\n   Corrigido: "${c.corrected.slice(0, 120)}"`).join('\n')
+    : '';
+
   const response = await client.messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 500,
-    system: buildSystemPrompt(genero),
+    system: buildSystemPrompt(genero) + correctionsSection,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
