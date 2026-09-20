@@ -24,14 +24,25 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const body: string = last.text || det.body || '';
     const mediaUrl: string | undefined = det.mediaUrl || det.url || undefined;
     const messageType: string = det.type || last.type || 'chat';
-    const base64: string | undefined = det.base64 || undefined;
+
+    // O campo com o conteúdo em base64 varia conforme o tipo de mídia/versão do Waspeed;
+    // tenta os nomes mais comuns e remove prefixo "data:...;base64," se presente
+    let base64raw: string | undefined = det.base64 || det.data || det.file || det.media || last.base64 || undefined;
+    if (base64raw?.startsWith('data:')) {
+      base64raw = base64raw.split(',')[1];
+    }
+    const base64 = base64raw;
+
     const filename: string | undefined = det.filename || det.caption || undefined;
-    const mimetype: string | undefined = det.mimetype || undefined;
+    const mimetype: string | undefined = det.mimetype || det.mimeType || undefined;
     const fromMe: boolean = !!(det.id?.fromMe || det.fromMe);
     const isGroup: boolean = from.includes('@g.us') || String(from).includes('-');
     const waName: string = String(payload.name || det.notifyName || '').trim();
 
     console.log('[webhook] from:', from, '| fromMe:', fromMe, '| isGroup:', isGroup, '| body:', body.slice(0, 80));
+    if (messageType === 'audio' || messageType === 'ptt' || messageType === 'document' || messageType === 'image') {
+      console.log('[webhook] mídia — type:', messageType, '| eventDetails keys:', Object.keys(det), '| base64 length:', base64?.length || 0, '| mimetype:', mimetype);
+    }
 
     if (!from) return;
 

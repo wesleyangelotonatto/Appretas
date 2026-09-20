@@ -137,6 +137,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // base64 (não como URL), então isso é priorizado sobre mediaUrl.
     let textBody = body;
     if (messageType === 'audio' || messageType === 'ptt') {
+      if (base64) {
+        const primeirosBytes = Buffer.from(base64.slice(0, 40), 'base64').toString('hex');
+        console.log(`[orchestrator] áudio base64 recebido, tamanho: ${base64.length}, primeiros bytes (hex): ${primeirosBytes}`);
+      }
       if (base64 || mediaUrl) {
         textBody = await transcribeAudio(mediaUrl, base64);
         io?.emit('transcription', { phone, original: mediaUrl || '[base64]', transcribed: textBody });
