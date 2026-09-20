@@ -117,6 +117,12 @@ export const MSG_URGENCIA_AGUARDAR = `Sua mensagem foi recebida e a *Iara* está
 
 export const MSG_PEDIR_ADVOGADO = `Vou comunicar ao Dr. Wesley sua solicitação. A *Iara* anotou e ele retornará assim que possível.`;
 
+// Pergunta qualificadora obrigatória para localizar processo: nome completo (se faltar) + contra quem (obrigatório) + número (recomendável)
+export function MSG_PEDIR_DADOS_PROCESSO(temNome: boolean): string {
+  const pedirNome = temNome ? '' : 'Para localizar o processo, preciso do nome completo da parte. ';
+  return `${pedirNome}Preciso saber contra quem é o processo e, de preferência, o número. Caso não tenha essas informações, preciso aguardar o Dr. Wesley me responder.`;
+}
+
 export function MSG_RECUSA_SECRETARIA(g: Genero = 'N'): string {
   return `Compreendo. A *Iara* vai informar ao Dr. Wesley que ${tratamento(g)} deseja falar diretamente com ele. Assim que possível, ele entrará em contato.`;
 }
@@ -151,12 +157,28 @@ export const GLOSSARIO: Record<string, string> = {
   'levantamento de alvará': 'movimentação interna do fórum',
 };
 
+// Expressões de entusiasmo forçado — nunca soar falso ou artificial
+const FRASES_PROIBIDAS = [
+  /fico\s+feliz\s+em\s+ajud[aá][-\s]?l[oa]?/gi,
+  /ficarei\s+feliz\s+em\s+ajud[aá][-\s]?l[oa]?/gi,
+  /(?:é|será)\s+um\s+prazer\s+(?:em\s+)?ajud[aá][-\s]?l[oa]?/gi,
+  /com\s+prazer\s+(?:em\s+)?ajud[aá][-\s]?l[oa]?/gi,
+  /que\s+bom\s+falar\s+com\s+(?:você|o\s+senhor|a\s+senhora)/gi,
+  /adorar[ia]a?\s+ajud[aá][-\s]?l[oa]?/gi,
+  /fico\s+à\s+disposição\s+com\s+muito\s+prazer/gi,
+];
+
 export function aplicarGlossario(texto: string): string {
   let resultado = texto;
   for (const [proibido, correto] of Object.entries(GLOSSARIO)) {
     const regex = new RegExp(`\\b${proibido}\\b`, 'gi');
     resultado = resultado.replace(regex, correto);
   }
+  for (const re of FRASES_PROIBIDAS) {
+    resultado = resultado.replace(re, '').replace(/\s{2,}/g, ' ').trim();
+  }
+  // Remove tags HTML (a IA às vezes gera <br> em vez de quebra de linha real)
+  resultado = resultado.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[a-z][^>]*>/gi, '');
   // Remove travessões e substitui por vírgula
   resultado = resultado.replace(/\s*—\s*/g, ', ');
   // Aplica negrito ao nome Iara e ao cargo secretária (formato WhatsApp)
@@ -190,6 +212,8 @@ REGRAS ABSOLUTAS (nunca violar):
 5. Nunca prometer retorno com prazo definido ("ligo em 1 hora")
 6. Usar sempre linguagem simples, nunca técnico-jurídica
 7. Nunca usar: vara, câmara, citação, procedente, improcedente, instrução processual, conciliação, alvará
+8. Nunca usar expressões de entusiasmo forçado ou artificial: "fico feliz em ajudar", "é um prazer ajudar", "ficarei feliz", "com prazer", "que bom falar com você", "adoraria ajudar" ou qualquer variação. O tom é profissional e cordial, nunca efusivo ou falso
+9. Nunca usar tags HTML como <br>, <b>, <i> etc. Para separar parágrafos, use apenas quebra de linha simples (linha em branco)
 
 LINGUAGEM E TOM:
 - Tom formal e profissional, como secretária de escritório de advocacia conceituado

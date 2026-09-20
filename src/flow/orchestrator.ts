@@ -11,7 +11,7 @@ import { buscarCardTrello, criarCardLead } from '../integrations/trello';
 import {
   aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
   MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, HORARIO_ATENDIMENTO,
-  detectarGenero, type Genero,
+  MSG_PEDIR_DADOS_PROCESSO, detectarGenero, type Genero,
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
 import { detectAppointment } from './appointmentDetector';
@@ -234,14 +234,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           const temDadosSuficientes = temProcesso || (nomeMencionado && textBody.toLowerCase().match(/contra|réu|requerido|parte contrária/));
 
           if (!temDadosSuficientes) {
-            const qualifyInstruction = `O cliente quer informações sobre um processo, mas ainda não temos dados suficientes para localizar.
-PERGUNTAS OBRIGATÓRIAS (faça as que ainda não foram respondidas):
-1. Nome completo da parte (quem é o cliente no processo) — OBRIGATÓRIO
-2. Contra quem é o processo (nome da parte contrária) — OBRIGATÓRIO
-3. Número do processo — recomendável, peça se não souber
-Se já tiver nome e parte contrária mas não encontrar no sistema, diga que vai verificar com o Dr. Wesley e que ele responderá em breve.`;
-            context = JSON.stringify({ contact, intent: classification.intent, customInstruction, instrucao: qualifyInstruction });
-            draft = await draftResponse('PROCESSO_ATIVO', textBody, context, generoFinal);
+            // Mensagem fixa (não gerada por IA) para garantir a frase obrigatória exata
+            const temNome = !!(contact?.name || nomeMencionado);
+            draft = MSG_PEDIR_DADOS_PROCESSO(temNome);
+            context = 'pedido_dados_processo';
             break;
           }
 
