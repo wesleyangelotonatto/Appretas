@@ -1,5 +1,5 @@
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting } from '../memory/db';
+import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -57,6 +57,39 @@ function isLikelyPersonName(name: string): boolean {
   if (trimmed.includes(' - ') || trimmed.includes(' x ')) return false;
   if (/\d{4,}/.test(trimmed)) return false; // números longos (processo, CPF etc.)
   return true;
+}
+
+const NOME_PATTERNS = [
+  /(?:meu\s+nome\s+é|me\s+chamo|sou\s+(?:o|a)\s|nome\s*[:\s]|parte\s*[:\s]|requerente\s*[:\s]|autor\s*[:\s])\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)/i,
+];
+const CONTRA_PARTE_PATTERNS = [
+  /contra\s+(?:o\s+|a\s+)?([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)/i,
+  /(?:réu|requerido|ré|requerida|parte\s+contrária|outra\s+parte)\s*(?:é|:)?\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)/i,
+];
+const PROCESSO_PATTERN = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
+
+function extrairDadosProcesso(phone: string, mensagemAtual: string): { nome: string; contraParte: string; numero: string } {
+  const historico = getHistory(phone, 30)
+    .filter((m: any) => m.role === 'client')
+    .map((m: any) => m.body)
+    .join('\n');
+  const textoCompleto = `${historico}\n${mensagemAtual}`;
+
+  let nome = '';
+  for (const re of NOME_PATTERNS) {
+    const m = textoCompleto.match(re);
+    if (m) { nome = m[1].trim(); break; }
+  }
+
+  let contraParte = '';
+  for (const re of CONTRA_PARTE_PATTERNS) {
+    const m = textoCompleto.match(re);
+    if (m) { contraParte = m[1].trim(); break; }
+  }
+
+  const numero = textoCompleto.match(PROCESSO_PATTERN)?.[0] || '';
+
+  return { nome, contraParte, numero };
 }
 
 function isEncerramento(text: string): boolean {
@@ -228,10 +261,11 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
-          // Extrai dados mencionados na mensagem do cliente para tentar localizar o processo
-          const nomeMencionado = textBody.match(/(?:nome|parte|requerente|autor)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || '';
-          const contraParteMencionada = textBody.match(/contra\s+(?:o\s+|a\s+)?([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || '';
-          const processoMencionado = textBody.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/)?.[0] || '';
+          // Extrai dados mencionados em toda a conversa (não só na mensagem atual) para localizar o processo
+          const dadosProcesso = extrairDadosProcesso(phone, textBody);
+          const nomeMencionado = dadosProcesso.nome;
+          const contraParteMencionada = dadosProcesso.contraParte;
+          const processoMencionado = dadosProcesso.numero;
 
           const temNome = !!(contact?.name || nomeMencionado);
           const temContraParte = !!contraParteMencionada;
@@ -264,8 +298,9 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
         case 'NOVO_CASO_CLIENTE_ANTIGO': {
           // Se o cliente mencionou nome da parte e da parte contrária, tenta localizar um caso
           // parecido no Trello (pode já existir e ainda não estar vinculado a este telefone)
-          const nomeCasoMencionado = textBody.match(/(?:nome|parte|requerente|autor)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || contact?.name || '';
-          const contraParteCaso = textBody.match(/contra\s+(?:o\s+|a\s+)?([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || '';
+          const dadosCaso = extrairDadosProcesso(phone, textBody);
+          const nomeCasoMencionado = dadosCaso.nome || contact?.name || '';
+          const contraParteCaso = dadosCaso.contraParte;
           let casoEncontrado = null;
           let djenCaso = null;
           if (nomeCasoMencionado && contraParteCaso) {
