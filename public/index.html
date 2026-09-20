@@ -63,6 +63,8 @@
     .message.iara { background: #1e3a5f; align-self: flex-end; border-radius: 12px 12px 0 12px; }
     .message.wesley { background: #1a3a1a; align-self: flex-end; border-radius: 12px 12px 0 12px; }
     .message .msg-meta { font-size: 10px; color: var(--text-muted); margin-top: 4px; }
+    .message .msg-media { margin-top: 6px; }
+    .message .msg-media a { color: var(--accent, #4f9eff); font-size: 12px; text-decoration: underline; }
     .message .msg-role { font-weight: 700; font-size: 11px; margin-bottom: 2px; }
     .msg-role.client { color: var(--text-muted); } .msg-role.iara { color: var(--blue); } .msg-role.wesley { color: var(--green); }
     .empty-chat { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); font-size: 14px; }
@@ -393,6 +395,7 @@
       <div class="message ${m.role}">
         <div class="msg-role ${m.role}">${{client:'Cliente',iara:'Iara',wesley:'Wesley'}[m.role]||m.role}</div>
         ${escHtml(m.body)}
+        ${m.mediaUrl ? `<div class="msg-media"><a href="${escHtml(m.mediaUrl)}" target="_blank" rel="noopener">Abrir arquivo no Drive</a></div>` : ''}
         <div class="msg-meta">${m.timestamp ? new Date(m.timestamp).toLocaleTimeString('pt-BR') : ''}</div>
       </div>
     `).join('');
