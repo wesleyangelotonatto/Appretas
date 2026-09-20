@@ -196,14 +196,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
     const generoFinal: Genero = detectarGenero(textBody, displayName);
 
-    // Saudação apenas na primeira mensagem do dia (não repete em dias/mensagens subsequentes)
-    const hoje = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
-    const isFirstContactEver = !session;
-    const isFirstMessageToday = !session?.updated_at || session.updated_at < hoje;
-    const shouldGreet = (isFirstContactEver || isFirstMessageToday) && classification.type !== 'PROCESSO_ATIVO';
-    if (shouldGreet) {
+    // Saudação apenas no primeiro contato absoluto (nunca repete em conversas subsequentes)
+    if (!session) {
       await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
-      if (isFirstContactEver) return; // novo contato: só saudação, aguarda resposta
+      return;
     }
 
     let draft = '';
@@ -211,22 +207,29 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
-          // Se não há número de processo identificado, faz perguntas qualificadoras
-          if (!contact?.processes?.length) {
-            const qualifyInstruction = `O cliente quer informações sobre um processo mas não temos o número cadastrado.
-Faça perguntas qualificadoras de forma natural (máximo 2 perguntas por vez):
-- O processo está em nome de quem?
-- Sabe o número do processo?
-- Contra quem é a ação?
-- Em qual cidade/comarca tramita?
-Diga que vai buscar as informações assim que tiver esses dados.`;
+          // Extrai dados mencionados na mensagem do cliente para tentar localizar o processo
+          const nomeMencionado = textBody.match(/(?:nome|parte|requerente|autor)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || '';
+          const processoMencionado = textBody.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/)?.[0] || '';
+
+          const temProcesso = contact?.processes?.length || processoMencionado;
+          const temDadosSuficientes = temProcesso || (nomeMencionado && textBody.toLowerCase().match(/contra|réu|requerido|parte contrária/));
+
+          if (!temDadosSuficientes) {
+            const qualifyInstruction = `O cliente quer informações sobre um processo, mas ainda não temos dados suficientes para localizar.
+PERGUNTAS OBRIGATÓRIAS (faça as que ainda não foram respondidas):
+1. Nome completo da parte (quem é o cliente no processo) — OBRIGATÓRIO
+2. Contra quem é o processo (nome da parte contrária) — OBRIGATÓRIO
+3. Número do processo — recomendável, peça se não souber
+Se já tiver nome e parte contrária mas não encontrar no sistema, diga que vai verificar com o Dr. Wesley e que ele responderá em breve.`;
             context = JSON.stringify({ contact, intent: classification.intent, customInstruction, instrucao: qualifyInstruction });
             draft = await draftResponse('PROCESSO_ATIVO', textBody, context, generoFinal);
             break;
           }
-          const djenData = await consultarDjen(contact.processes[0]);
-          const trelloCard = await buscarCardTrello(contact.processes[0]);
-          context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, customInstruction });
+
+          const numBusca = processoMencionado || contact?.processes?.[0] || '';
+          const djenData = numBusca ? await consultarDjen(numBusca) : null;
+          const trelloCard = numBusca ? await buscarCardTrello(numBusca) : null;
+          context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, nomeMencionado, customInstruction });
           draft = await draftResponse(classification.type, textBody, context, generoFinal);
           break;
         }
