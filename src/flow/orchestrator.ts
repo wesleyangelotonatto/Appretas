@@ -21,6 +21,7 @@ interface IncomingMessage {
   body: string;
   mediaUrl?: string;
   messageType?: string;
+  waName?: string;
   io: any;
 }
 
@@ -46,6 +47,18 @@ const ENCERRAMENTOS_RE = [
   /^👍[\s!.]*$/,
 ];
 
+const CASE_TITLE_KEYWORDS = /processo|requerimento|apresentação|espólio|execução|embargos|ação\b|mandado|recurso|apelação|inventário|cumprimento de sentença|habilitação/i;
+
+function isLikelyPersonName(name: string): boolean {
+  if (!name) return false;
+  const trimmed = name.trim();
+  if (trimmed.length > 60) return false;
+  if (CASE_TITLE_KEYWORDS.test(trimmed)) return false;
+  if (trimmed.includes(' - ') || trimmed.includes(' x ')) return false;
+  if (/\d{4,}/.test(trimmed)) return false; // números longos (processo, CPF etc.)
+  return true;
+}
+
 function isEncerramento(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
@@ -62,7 +75,7 @@ const RECLAMACAO_KEYWORDS = [
 ];
 
 export async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
-  const { phone, io } = msg;
+  const { phone, io, waName } = msg;
   let { body, mediaUrl, messageType } = msg;
 
   try {
@@ -177,7 +190,11 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       customInstruction,
     });
 
-    const displayName = (contact as any)?.displayName || contact?.name || session?.name || 'Desconhecido';
+    // Nome de exibição no painel: prioriza nome do WhatsApp/sessão; só usa nome de lookup (Trello/Sheets)
+    // se parecer um nome de pessoa de verdade (evita mostrar título de card como "REQUERIMENTO... ESPÓLIO DE...")
+    const lookupName = (contact as any)?.displayName || contact?.name || '';
+    const lookupNameIsPerson = isLikelyPersonName(lookupName);
+    const displayName = session?.name || waName || (lookupNameIsPerson ? lookupName : '') || phone;
 
     upsertSession(phone, {
       name: displayName,

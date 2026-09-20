@@ -136,6 +136,18 @@ export function getHistory(phone: string, days = 90) {
   return getDb().prepare('SELECT * FROM messages WHERE phone = ? AND created_at > ? ORDER BY created_at').all(phone, since) as any[];
 }
 
+// Lista sessões ativas dos últimos N dias, com o histórico de mensagens de cada uma,
+// para reconstruir o painel após um refresh (F5) sem perder conversas em andamento
+export function getActiveConversations(days = 7) {
+  const since = Math.floor(Date.now() / 1000) - days * 86400;
+  const sessions = getDb().prepare('SELECT * FROM sessions WHERE updated_at > ? ORDER BY updated_at DESC').all(since) as any[];
+  return sessions.map(s => ({
+    ...s,
+    messages: getDb().prepare('SELECT role, body, media_url as mediaUrl, created_at as timestamp FROM messages WHERE phone = ? AND created_at > ? ORDER BY created_at')
+      .all(s.phone, since) as any[],
+  }));
+}
+
 export function savePendingApproval(phone: string, draft: string, context: string) {
   return (getDb().prepare('INSERT INTO pending_approvals (phone, draft, context) VALUES (?, ?, ?)')
     .run(phone, draft, context)).lastInsertRowid;

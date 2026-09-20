@@ -26,6 +26,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const messageType: string = last.type || det.type || 'chat';
     const fromMe: boolean = !!(det.id?.fromMe || det.fromMe);
     const isGroup: boolean = from.includes('@g.us') || String(from).includes('-');
+    const waName: string = String(payload.name || det.notifyName || '').trim();
 
     console.log('[webhook] from:', from, '| fromMe:', fromMe, '| isGroup:', isGroup, '| body:', body.slice(0, 80));
 
@@ -51,6 +52,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       body,
       mediaUrl,
       messageType,
+      waName,
       io: req.app.locals.io,
     });
   } catch (err) {

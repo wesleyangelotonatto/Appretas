@@ -289,8 +289,28 @@
   socket.on('connect', () => {
     document.getElementById('conn-dot').style.background = 'var(--green)';
     loadPendingApprovals();
+    loadConversations();
   });
   socket.on('disconnect', () => { document.getElementById('conn-dot').style.background = 'var(--red)'; });
+
+  // Reconstrói o painel (sessões + mensagens) após conectar/atualizar a página
+  async function loadConversations() {
+    try {
+      const res = await fetch('/command/conversations');
+      const sessions = await res.json();
+      for (const s of sessions) {
+        ensureConv(s.phone);
+        conversations[s.phone].name = s.name || s.phone;
+        conversations[s.phone].type = s.type || 'DESCONHECIDO';
+        conversations[s.phone].status = s.status || 'ativo';
+        conversations[s.phone].messages = (s.messages || []).map(m => ({
+          role: m.role, body: m.body, mediaUrl: m.mediaUrl, timestamp: m.timestamp * 1000,
+        }));
+      }
+      renderConvList();
+      if (activePhone) renderMessages();
+    } catch (e) { console.error('erro ao carregar conversas', e); }
+  }
 
   socket.on('message', (data) => {
     const { phone, role, body, mediaUrl, timestamp } = data;
@@ -298,7 +318,6 @@
     conversations[phone].messages.push({ role, body, mediaUrl, timestamp });
     renderConvList();
     if (activePhone === phone) renderMessages();
-    addLog(`Msg (${role}) de ${conversations[phone].name || phone}`);
   });
 
   socket.on('session_update', (data) => {
@@ -317,11 +336,9 @@
   socket.on('alert', addAlert);
   socket.on('urgent_alert', (data) => addAlert({ ...data, priority: 'high', type: 'URGÊNCIA' }));
   socket.on('new_group', (data) => addAlert({ message: data.message, priority: 'medium', type: 'GRUPO' }));
-  socket.on('transcription', (data) => addLog(`Áudio transcrito de ${data.phone}`));
-  socket.on('error', (data) => addLog(`ERRO: ${data.error}`, true));
   socket.on('appointment', (data) => addAlert({ type: 'AGENDA', message: `Atendimento com ${data.name} — ${data.dateLabel}`, priority: 'medium' }));
-  socket.on('followup_created', (data) => addLog(`Follow-up criado para ${data.phone}`));
-  socket.on('followup_updated', (data) => addLog(`Follow-up #${data.id} → ${data.status}`));
+  // Central de comandos: mostra apenas comandos dados e respostas efetivamente enviadas
+  socket.on('command_log', (data) => addLog(`${data.command} → ${data.response}`, !data.ok));
 
   function ensureConv(phone) {
     if (!conversations[phone]) conversations[phone] = { name: phone, type: 'DESCONHECIDO', status: 'ativo', messages: [], processes: [] };
@@ -429,7 +446,6 @@
     await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,draft})});
     pendingApprovals = pendingApprovals.filter(a => a.id !== id);
     renderApprovals();
-    addLog(`Resposta aprovada e enviada para ${phone}`);
   }
 
   function showEdit(id) {
@@ -442,7 +458,6 @@
     await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,draft})});
     pendingApprovals = pendingApprovals.filter(a => a.id !== id);
     renderApprovals();
-    addLog(`Resposta editada e enviada para ${phone}`);
   }
 
   async function discardApproval(id) {
@@ -458,7 +473,6 @@
     await fetch(isTakeover?'/command/handback':'/command/takeover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:activePhone})});
     conv.status = isTakeover ? 'ativo' : 'takeover';
     updateChatHeader(); renderConvList();
-    addLog(isTakeover ? `Devolveu ${conv.name} à IA` : `Assumiu conversa com ${conv.name}`);
   }
 
   async function handBack() {
@@ -504,8 +518,7 @@
       body: JSON.stringify({ phone: activePhone, url, caption })
     });
     const data = await res.json();
-    if (data.ok) { addLog(`Documento enviado para ${activePhone}`); closeDocModal(); }
-    else addLog(`Erro ao enviar documento: ${data.error}`, true);
+    if (data.ok) closeDocModal();
   }
 
   // ── Modal Follow-up ──────────────────────────────────────────────────────────
@@ -541,8 +554,7 @@
       body: JSON.stringify({ phone: activePhone, message, startDate: new Date(startDate).toISOString(), recurrenceDays, stopCondition, stopDate: stopDate ? new Date(stopDate).toISOString() : undefined })
     });
     const data = await res.json();
-    if (data.ok) { addLog(`Follow-up criado para ${activePhone}`); await loadFollowUps(); }
-    else addLog(`Erro: ${data.error}`, true);
+    if (data.ok) await loadFollowUps();
   }
 
   async function loadFollowUps() {
@@ -578,13 +590,11 @@
 
   async function cancelFollowUp(id) {
     await fetch(`/command/followup/${id}/cancel`,{method:'POST'});
-    addLog(`Follow-up #${id} encerrado`);
     await loadFollowUps();
   }
 
   async function pauseFollowUp(id, status) {
     await fetch(`/command/followup/${id}/pause`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
-    addLog(`Follow-up #${id} → ${status}`);
     await loadFollowUps();
   }
 
@@ -599,7 +609,6 @@
   async function sendCmd(text) {
     const res = await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,context:JSON.stringify({activePhone,conversations:Object.keys(conversations)})})});
     const data = await res.json();
-    addLog(`Cmd: ${text} → ${data.parsed?.response||'executado'}`);
     return data;
   }
 
@@ -671,19 +680,16 @@
     if (!msg) return alert('Informe a mensagem de ausência');
     await fetch('/command/ausencia', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mensagem:msg})});
     ausenciaAtiva = true; updateAusenciaBtn(); closeAusenciaModal();
-    addLog('Modo ausência ATIVADO');
   }
 
   async function desativarAusencia() {
     await fetch('/command/ausencia', {method:'DELETE'});
     ausenciaAtiva = false; updateAusenciaBtn(); closeAusenciaModal();
-    addLog('Modo ausência DESATIVADO');
   }
 
   socket.on('ausencia_update', (data) => {
     ausenciaAtiva = data.ativo;
     updateAusenciaBtn();
-    addLog(data.ativo ? `Modo ausência ativado` : 'Modo ausência desativado');
   });
 
   checkAusencia();

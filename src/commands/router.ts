@@ -6,6 +6,7 @@ import {
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
+  getActiveConversations,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -19,10 +20,31 @@ commandRouter.post('/', async (req: Request, res: Response) => {
 
   try {
     const parsed = await parseCommand(text, context || '{}');
+
+    // Fallback: se a ação é enviar mensagem mas o telefone não veio identificado,
+    // usa a conversa ativa no painel (activePhone) como alvo
+    if (parsed.action === 'send_message' && !parsed.params?.phone) {
+      try {
+        const ctx = JSON.parse(context || '{}');
+        if (ctx.activePhone) parsed.params = { ...parsed.params, phone: ctx.activePhone };
+      } catch {}
+    }
+
     const result = await executeCommand(parsed, req.app.locals.io);
+
+    // Log real: comando dado + confirmação de que foi de fato enviado/executado
+    const sentOk = parsed.action === 'send_message' ? !!result?.sent : true;
+    req.app.locals.io?.emit('command_log', {
+      command: text,
+      response: sentOk ? (parsed.response || 'Executado') : 'Falha: telefone não identificado, mensagem não enviada',
+      ok: sentOk,
+      timestamp: Date.now(),
+    });
+
     res.json({ parsed, result });
   } catch (err) {
     console.error('[command] erro:', err);
+    req.app.locals.io?.emit('command_log', { command: text, response: `Erro: ${String(err)}`, ok: false, timestamp: Date.now() });
     res.status(500).json({ error: String(err) });
   }
 });
@@ -51,6 +73,7 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
 
     req.app.locals.io?.emit('approval_sent', { id, phone, draft });
     req.app.locals.io?.emit('message', { phone, role: 'iara', body: draft, timestamp: Date.now() });
+    req.app.locals.io?.emit('command_log', { command: `[Aprovação] ${phone}`, response: draft, ok: true, timestamp: Date.now() });
 
     res.json({ ok: true });
   } catch (err) {
@@ -72,6 +95,11 @@ commandRouter.post('/resumos', async (_req, res) => {
 // GET /command/pending — lista aprovações pendentes (modo treino)
 commandRouter.get('/pending', (_req, res) => {
   res.json(getPendingApprovals());
+});
+
+// GET /command/conversations — reconstrói o estado do painel após refresh (F5)
+commandRouter.get('/conversations', (_req, res) => {
+  res.json(getActiveConversations(7));
 });
 
 // POST /command/takeover — Wesley assume conversa
