@@ -81,11 +81,20 @@ Responda APENAS com JSON válido:
   }
 }
 
-export async function transcribeAudio(mediaUrl: string): Promise<string> {
+export async function transcribeAudio(mediaUrl?: string, base64?: string): Promise<string> {
   try {
-    const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+    let audioBuffer: Buffer;
+    if (base64) {
+      audioBuffer = Buffer.from(base64, 'base64');
+    } else if (mediaUrl) {
+      const response = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+      audioBuffer = Buffer.from(response.data);
+    } else {
+      return '[Áudio recebido — sem conteúdo disponível]';
+    }
+
     const tmpPath = path.join('/tmp', `audio_${Date.now()}.ogg`);
-    fs.writeFileSync(tmpPath, response.data);
+    fs.writeFileSync(tmpPath, audioBuffer);
 
     const transcription = await groq.audio.transcriptions.create({
       file: fs.createReadStream(tmpPath),

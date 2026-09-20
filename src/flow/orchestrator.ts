@@ -133,14 +133,16 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     if (session?.status === 'pausado') return;
 
-    // 4. Transcreve áudio se necessário (antes de salvar)
+    // 4. Transcreve áudio se necessário (antes de salvar). O Waspeed envia o áudio em
+    // base64 (não como URL), então isso é priorizado sobre mediaUrl.
     let textBody = body;
     if (messageType === 'audio' || messageType === 'ptt') {
-      if (mediaUrl) {
-        textBody = await transcribeAudio(mediaUrl);
-        io?.emit('transcription', { phone, original: mediaUrl, transcribed: textBody });
+      if (base64 || mediaUrl) {
+        textBody = await transcribeAudio(mediaUrl, base64);
+        io?.emit('transcription', { phone, original: mediaUrl || '[base64]', transcribed: textBody });
+        console.log(`[orchestrator] áudio transcrito para ${phone}: "${textBody.slice(0, 100)}"`);
       } else {
-        textBody = '[Áudio recebido — sem URL de mídia]';
+        textBody = '[Áudio recebido — sem conteúdo disponível]';
       }
     }
 
