@@ -196,10 +196,12 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
     const generoFinal: Genero = detectarGenero(textBody, displayName);
 
-    // Saudação apenas no primeiro contato absoluto (nunca repete em conversas subsequentes)
-    if (!session) {
+    // Saudação uma vez por dia (primeiro contato do dia)
+    const hoje = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+    const isFirstMessageToday = !session || !session.updated_at || session.updated_at < hoje;
+    if (isFirstMessageToday) {
       await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
-      return;
+      if (!session) return; // primeiro contato absoluto: aguarda resposta antes de continuar
     }
 
     let draft = '';
