@@ -259,6 +259,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     let draft = '';
     let context = '';
 
+    // Histórico da conversa (últimos 30 dias), para a IA responder com contexto completo
+    // e não repetir perguntas ou saudações já feitas
+    const historicoConversa = getHistory(phone, 30).map((m: any) => ({ role: m.role, body: m.body }));
+
     switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
           // Extrai dados mencionados em toda a conversa (não só na mensagem atual) para localizar o processo
@@ -292,7 +296,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
           const djenData = numBusca ? await consultarDjen(numBusca) : null;
           context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, nomeMencionado, contraParteMencionada, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context, generoFinal);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal, historicoConversa);
           break;
         }
         case 'NOVO_CASO_CLIENTE_ANTIGO': {
@@ -311,14 +315,14 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
             }
           }
           context = JSON.stringify({ contact, intent: classification.intent, trello: casoEncontrado, djen: djenCaso, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context, generoFinal);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal, historicoConversa);
           await criarCardLead({ name: contact?.name || phone, phone, summary: classification.intent, type: 'NOVO_CASO_CLIENTE_ANTIGO' });
           io?.emit('alert', { phone, type: 'novo_caso', message: `Novo caso de cliente antigo: ${contact?.name || phone}` });
           break;
         }
         case 'LEAD_NOVO': {
           context = JSON.stringify({ phone, intent: classification.intent, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context, generoFinal);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal, historicoConversa);
           await criarCardLead({ name: phone, phone, summary: classification.intent, type: 'LEAD_NOVO' });
           io?.emit('alert', { phone, type: 'lead_novo', message: `Novo lead: ${phone} — ${classification.intent}` });
           break;
@@ -331,7 +335,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
         case 'NEGOCIO_PARTICULAR':
         case 'INSTITUCIONAL': {
           context = JSON.stringify({ contact, type: classification.type, intent: classification.intent, customInstruction });
-          draft = await draftResponse(classification.type, textBody, context, generoFinal);
+          draft = await draftResponse(classification.type, textBody, context, generoFinal, historicoConversa);
           const priority = classification.type === 'INSTITUCIONAL' ? 'high' : 'medium';
           io?.emit('alert', { phone, type: classification.type.toLowerCase(), message: `${classification.type}: ${contact?.name || phone}`, priority });
           break;

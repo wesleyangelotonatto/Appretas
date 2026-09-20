@@ -19,20 +19,28 @@ export async function draftResponse(
   type: ClassificationType | string,
   clientMessage: string,
   context: string,
-  genero: Genero = 'N'
+  genero: Genero = 'N',
+  historico: Array<{ role: string; body: string }> = []
 ): Promise<string> {
   const typeInstruction = TYPE_INSTRUCTIONS[type] || TYPE_INSTRUCTIONS['DESCONHECIDO'];
+
+  const historicoFormatado = historico.length > 0
+    ? historico.map(m => `${m.role === 'client' ? 'Cliente' : m.role === 'iara' ? 'Iara' : 'Dr. Wesley'}: ${m.body}`).join('\n')
+    : '(nenhuma mensagem anterior nesta conversa)';
 
   const userPrompt = `TIPO DE ATENDIMENTO: ${type}
 INSTRUÇÃO: ${typeInstruction}
 
+HISTÓRICO DA CONVERSA (leia com atenção antes de responder, para não repetir perguntas já respondidas nem se apresentar de novo):
+${historicoFormatado}
+
 CONTEXTO (dados do sistema):
 ${context}
 
-MENSAGEM DO CLIENTE:
+ÚLTIMA MENSAGEM DO CLIENTE (a que você está respondendo agora):
 "${clientMessage}"
 
-Redija a resposta da Iara. Máximo 3 parágrafos curtos. Linguagem simples. Nunca dar parecer jurídico. Nunca mencionar valores.`;
+Redija a resposta da Iara considerando tudo que já foi dito na conversa. Máximo 3 parágrafos curtos. Linguagem simples. Nunca dar parecer jurídico. Nunca mencionar valores. Nunca repita uma pergunta cuja resposta já está no histórico acima.`;
 
   const corrections = getRecentCorrections(20);
   const correctionsSection = corrections.length > 0
