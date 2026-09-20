@@ -12,18 +12,20 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
 
     console.log('[webhook] payload recebido:', JSON.stringify(payload).slice(0, 300));
 
-    if (!payload || payload.type !== 'message') {
-      console.log('[webhook] ignorado — type:', payload?.type);
+    if (!payload || payload.eventID !== 'messages') {
+      console.log('[webhook] ignorado — eventID:', payload?.eventID);
       return;
     }
 
-    const msg = payload.message || payload;
-    const from: string = msg.from || msg.chatId || '';
-    const body: string = msg.body || msg.text || '';
-    const mediaUrl: string | undefined = msg.mediaUrl || msg.url || undefined;
-    const messageType: string = msg.type || 'text';
-    const fromMe: boolean = !!(msg.fromMe || msg.id?.fromMe);
-    const isGroup: boolean = from.includes('@g.us') || from.includes('-');
+    const det = payload.eventDetails || {};
+    const last = payload.lastMessage || {};
+
+    const from: string = payload.number || det.from || '';
+    const body: string = last.text || det.body || '';
+    const mediaUrl: string | undefined = det.mediaUrl || det.url || undefined;
+    const messageType: string = last.type || det.type || 'chat';
+    const fromMe: boolean = !!(det.id?.fromMe || det.fromMe);
+    const isGroup: boolean = from.includes('@g.us') || String(from).includes('-');
 
     console.log('[webhook] from:', from, '| fromMe:', fromMe, '| isGroup:', isGroup, '| body:', body.slice(0, 80));
 
