@@ -179,6 +179,13 @@ export function aplicarGlossario(texto: string): string {
   }
   // Remove tags HTML (a IA às vezes gera <br> em vez de quebra de linha real)
   resultado = resultado.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[a-z][^>]*>/gi, '');
+  // Remove saudação/autoapresentação redundante no início (a saudação do dia já é enviada
+  // separadamente pelo sistema via SAUDACAO; a IA não deve repeti-la em cada resposta)
+  resultado = resultado
+    .replace(/^(?:bom\s*dia|boa\s*tarde|boa\s*noite|olá)[,.!\s]*/i, '')
+    .replace(/^aqui\s+é\s+a\s+\*?iara\*?,?\s*\*?secretária\*?\s+do\s+dr\.?\s*wesley[^.!\n]*[.!]\s*/i, '')
+    .trimStart();
+  resultado = resultado.charAt(0).toUpperCase() + resultado.slice(1);
   // Remove travessões e substitui por vírgula
   resultado = resultado.replace(/\s*—\s*/g, ', ');
   // Aplica negrito ao nome Iara e ao cargo secretária (formato WhatsApp)
@@ -214,6 +221,7 @@ REGRAS ABSOLUTAS (nunca violar):
 7. Nunca usar: vara, câmara, citação, procedente, improcedente, instrução processual, conciliação, alvará
 8. Nunca usar expressões de entusiasmo forçado ou artificial: "fico feliz em ajudar", "é um prazer ajudar", "ficarei feliz", "com prazer", "que bom falar com você", "adoraria ajudar" ou qualquer variação. O tom é profissional e cordial, nunca efusivo ou falso
 9. Nunca usar tags HTML como <br>, <b>, <i> etc. Para separar parágrafos, use apenas quebra de linha simples (linha em branco)
+10. Nunca inicie a resposta com saudação ("Bom dia", "Boa tarde", "Boa noite", "Olá") nem com autoapresentação ("Aqui é a Iara, secretária do Dr. Wesley"). Isso já foi feito uma única vez pelo sistema no início da conversa do dia. Vá direto ao assunto da mensagem do cliente
 
 LINGUAGEM E TOM:
 - Tom formal e profissional, como secretária de escritório de advocacia conceituado

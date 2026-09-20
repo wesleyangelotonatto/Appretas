@@ -7,7 +7,7 @@ import { draftResponse } from '../responder/claude';
 import { sendMessage, createNote } from '../responder/send';
 import { savePendingApproval } from '../memory/db';
 import { consultarDjen } from '../integrations/djen';
-import { buscarCardTrello, criarCardLead } from '../integrations/trello';
+import { buscarCardTrello, buscarCardPorNomes, criarCardLead } from '../integrations/trello';
 import {
   aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
   MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, HORARIO_ATENDIMENTO,
@@ -230,28 +230,52 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
         case 'PROCESSO_ATIVO': {
           // Extrai dados mencionados na mensagem do cliente para tentar localizar o processo
           const nomeMencionado = textBody.match(/(?:nome|parte|requerente|autor)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || '';
+          const contraParteMencionada = textBody.match(/contra\s+(?:o\s+|a\s+)?([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || '';
           const processoMencionado = textBody.match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/)?.[0] || '';
 
+          const temNome = !!(contact?.name || nomeMencionado);
+          const temContraParte = !!contraParteMencionada;
           const temProcesso = contact?.processes?.length || processoMencionado;
-          const temDadosSuficientes = temProcesso || (nomeMencionado && textBody.toLowerCase().match(/contra|réu|requerido|parte contrária/));
+          const temDadosSuficientes = temProcesso || (temNome && temContraParte);
 
           if (!temDadosSuficientes) {
             // Mensagem fixa (não gerada por IA) para garantir a frase obrigatória exata
-            const temNome = !!(contact?.name || nomeMencionado);
             draft = MSG_PEDIR_DADOS_PROCESSO(temNome);
             context = 'pedido_dados_processo';
             break;
           }
 
-          const numBusca = processoMencionado || contact?.processes?.[0] || '';
+          let numBusca = processoMencionado || contact?.processes?.[0] || '';
+          let trelloCard = numBusca ? await buscarCardTrello(numBusca) : null;
+
+          // Sem número: tenta localizar o caso pelo nome da parte + parte contrária
+          if (!trelloCard && temNome && temContraParte) {
+            trelloCard = await buscarCardPorNomes(contact?.name || nomeMencionado, contraParteMencionada);
+            if (trelloCard) {
+              numBusca = (String(trelloCard.name || '') + ' ' + String(trelloCard.desc || '')).match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/)?.[0] || '';
+            }
+          }
+
           const djenData = numBusca ? await consultarDjen(numBusca) : null;
-          const trelloCard = numBusca ? await buscarCardTrello(numBusca) : null;
-          context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, nomeMencionado, customInstruction });
+          context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, nomeMencionado, contraParteMencionada, customInstruction });
           draft = await draftResponse(classification.type, textBody, context, generoFinal);
           break;
         }
         case 'NOVO_CASO_CLIENTE_ANTIGO': {
-          context = JSON.stringify({ contact, intent: classification.intent, customInstruction });
+          // Se o cliente mencionou nome da parte e da parte contrária, tenta localizar um caso
+          // parecido no Trello (pode já existir e ainda não estar vinculado a este telefone)
+          const nomeCasoMencionado = textBody.match(/(?:nome|parte|requerente|autor)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || contact?.name || '';
+          const contraParteCaso = textBody.match(/contra\s+(?:o\s+|a\s+)?([A-ZÀ-Ú][a-zà-ú]+(?: [A-ZÀ-Ú][a-zà-ú]+)+)/i)?.[1] || '';
+          let casoEncontrado = null;
+          let djenCaso = null;
+          if (nomeCasoMencionado && contraParteCaso) {
+            casoEncontrado = await buscarCardPorNomes(nomeCasoMencionado, contraParteCaso);
+            if (casoEncontrado) {
+              const numCaso = (String(casoEncontrado.name || '') + ' ' + String(casoEncontrado.desc || '')).match(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/)?.[0] || '';
+              if (numCaso) djenCaso = await consultarDjen(numCaso);
+            }
+          }
+          context = JSON.stringify({ contact, intent: classification.intent, trello: casoEncontrado, djen: djenCaso, customInstruction });
           draft = await draftResponse(classification.type, textBody, context, generoFinal);
           await criarCardLead({ name: contact?.name || phone, phone, summary: classification.intent, type: 'NOVO_CASO_CLIENTE_ANTIGO' });
           io?.emit('alert', { phone, type: 'novo_caso', message: `Novo caso de cliente antigo: ${contact?.name || phone}` });

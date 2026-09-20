@@ -31,6 +31,32 @@ export async function buscarCardTrello(processoNumero: string): Promise<any | nu
   }
 }
 
+// Busca um card pelo nome da parte e, se informado, da parte contrária (usado quando o cliente
+// não sabe o número do processo, mas informa nome completo + contra quem é o processo)
+export async function buscarCardPorNomes(nomeParte: string, nomeContraParte?: string): Promise<any | null> {
+  try {
+    const alvo1 = nomeParte.toLowerCase().trim();
+    const alvo2 = nomeContraParte?.toLowerCase().trim();
+
+    const listsRes = await axios.get(`${BASE}/boards/${BOARD_OP()}/lists`, { params: auth() });
+    for (const list of listsRes.data) {
+      const cardsRes = await axios.get(`${BASE}/lists/${list.id}/cards`, { params: auth() });
+      for (const card of cardsRes.data) {
+        const combined = `${card.name || ''} ${card.desc || ''}`.toLowerCase();
+        const temParte1 = combined.includes(alvo1);
+        const temParte2 = alvo2 ? combined.includes(alvo2) : true;
+        if (temParte1 && temParte2) {
+          return card;
+        }
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('[trello] erro ao buscar card por nomes:', err);
+    return null;
+  }
+}
+
 export async function atualizarCardTrello(cardId: string, updates: { name?: string; desc?: string; idList?: string }): Promise<void> {
   await axios.put(`${BASE}/cards/${cardId}`, { ...updates, ...auth() });
 }
