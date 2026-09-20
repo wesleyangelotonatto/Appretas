@@ -8,6 +8,7 @@ import { sendMessage, createNote } from '../responder/send';
 import { savePendingApproval } from '../memory/db';
 import { consultarDjen } from '../integrations/djen';
 import { buscarCardTrello, buscarCardPorNomes, criarCardLead } from '../integrations/trello';
+import { saveDocument } from '../integrations/drive';
 import {
   aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
   MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, HORARIO_ATENDIMENTO,
@@ -22,6 +23,9 @@ interface IncomingMessage {
   mediaUrl?: string;
   messageType?: string;
   waName?: string;
+  base64?: string;
+  filename?: string;
+  mimetype?: string;
   io: any;
 }
 
@@ -108,7 +112,7 @@ const RECLAMACAO_KEYWORDS = [
 ];
 
 export async function handleIncomingMessage(msg: IncomingMessage): Promise<void> {
-  const { phone, io, waName } = msg;
+  const { phone, io, waName, base64, filename, mimetype } = msg;
   let { body, mediaUrl, messageType } = msg;
 
   try {
@@ -137,6 +141,26 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
         io?.emit('transcription', { phone, original: mediaUrl, transcribed: textBody });
       } else {
         textBody = '[Áudio recebido — sem URL de mídia]';
+      }
+    }
+
+    // 4b. Documento/imagem: o Waspeed envia o arquivo em base64 (não como URL).
+    // Salva no Drive na pasta do cliente e usa o link do Drive como mídia exibida no painel.
+    if (messageType === 'document' || messageType === 'image') {
+      const nomeArquivo = filename || `${messageType === 'image' ? 'imagem' : 'documento'}_${Date.now()}`;
+      if (base64) {
+        try {
+          const buffer = Buffer.from(base64, 'base64');
+          const nomeCliente = getSession(phone)?.name || waName || phone;
+          const driveLink = await saveDocument(phone, nomeCliente, nomeArquivo, buffer, mimetype || 'application/octet-stream');
+          mediaUrl = driveLink || mediaUrl;
+          textBody = body || `[Documento recebido: ${nomeArquivo}]`;
+        } catch (err) {
+          console.error('[orchestrator] erro ao salvar documento no Drive:', err);
+          textBody = body || `[Documento recebido: ${nomeArquivo} — falha ao salvar no Drive]`;
+        }
+      } else {
+        textBody = body || `[Documento recebido: ${nomeArquivo} — sem conteúdo]`;
       }
     }
 

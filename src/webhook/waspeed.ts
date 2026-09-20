@@ -23,7 +23,10 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const from: string = payload.number || det.from || '';
     const body: string = last.text || det.body || '';
     const mediaUrl: string | undefined = det.mediaUrl || det.url || undefined;
-    const messageType: string = last.type || det.type || 'chat';
+    const messageType: string = det.type || last.type || 'chat';
+    const base64: string | undefined = det.base64 || undefined;
+    const filename: string | undefined = det.filename || det.caption || undefined;
+    const mimetype: string | undefined = det.mimetype || undefined;
     const fromMe: boolean = !!(det.id?.fromMe || det.fromMe);
     const isGroup: boolean = from.includes('@g.us') || String(from).includes('-');
     const waName: string = String(payload.name || det.notifyName || '').trim();
@@ -53,6 +56,9 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       mediaUrl,
       messageType,
       waName,
+      base64,
+      filename,
+      mimetype,
       io: req.app.locals.io,
     });
   } catch (err) {
