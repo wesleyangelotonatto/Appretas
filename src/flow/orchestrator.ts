@@ -110,9 +110,11 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
-    // 7. Informa horário fora do expediente (não bloqueia — atendimento 24h)
-    if (!isWithinBusinessHours()) {
-      await deliverOrQueue(phone, MSG_FORA_HORARIO, 'fora_horario', io);
+    // 7. Informa horário fora do expediente (não bloqueia — atendimento 24h; enviado automaticamente só 1x por sessão)
+    if (!isWithinBusinessHours() && !session) {
+      await sendMessage(phone, MSG_FORA_HORARIO);
+      saveMessage(phone, 'iara', MSG_FORA_HORARIO);
+      io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
     }
 
     // 8. Detecta urgência
