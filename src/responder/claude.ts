@@ -12,7 +12,7 @@ const TYPE_INSTRUCTIONS: Record<string, string> = {
   NEGOCIO_PARTICULAR: `É um contato de negócio (não-advocatício). Recepcione educadamente, anote a pauta e diga que vai repassar ao Dr. Wesley.`,
   AMIGO_PESSOAL: `É uma mensagem de amigo/pessoal. Responda de forma leve e informal, dizendo que Wesley está em atendimento e vai retornar.`,
   INSTITUCIONAL: `É um contato institucional (OAB, Maçonaria, etc.). Resposta MUITO formal. Recepcione, anote a pauta e diga que Dr. Wesley retornará em breve.`,
-  DESCONHECIDO: `Não foi possível classificar o contato. Faça a saudação padrão e pergunte como pode ajudar.`,
+  DESCONHECIDO: `A mensagem não traz dado novo classificável (pode ser cobrança de prazo, reclamação sobre demora, agradecimento, pergunta sobre quando o Dr. Wesley vai responder, etc.). Responda de forma direta e acolhedora ao que o cliente disse, sem repetir perguntas já feitas no histórico. Se ele estiver perguntando quanto tempo vai demorar, diga que não pode prometer prazo exato, mas que o Dr. Wesley foi avisado e responderá assim que possível.`,
 };
 
 export async function draftResponse(

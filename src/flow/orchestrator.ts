@@ -213,6 +213,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
+    // Histórico da conversa (últimos 30 dias), usado tanto na classificação quanto na resposta,
+    // para não perder o contexto do que já foi dito
+    const historicoConversa = getHistory(phone, 30).map((m: any) => ({ role: m.role, body: m.body }));
+
     // 13. Classificação via Claude Haiku
     const classification = await classifyContact({
       phone,
@@ -221,6 +225,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       processes: contact?.processes,
       messageText: textBody,
       customInstruction,
+      historico: historicoConversa,
     });
 
     // Nome de exibição no painel: replica o que aparece no WhatsApp.
@@ -258,10 +263,6 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     let draft = '';
     let context = '';
-
-    // Histórico da conversa (últimos 30 dias), para a IA responder com contexto completo
-    // e não repetir perguntas ou saudações já feitas
-    const historicoConversa = getHistory(phone, 30).map((m: any) => ({ role: m.role, body: m.body }));
 
     switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
@@ -341,7 +342,14 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           break;
         }
         default: {
-          draft = SAUDACAO(generoFinal);
+          // DESCONHECIDO: cobrança de prazo, reclamação de demora, agradecimento etc.
+          // Nunca reenviar a saudação aqui — usa a IA com o histórico para responder com contexto.
+          if (session) {
+            context = JSON.stringify({ contact, intent: classification.intent, customInstruction });
+            draft = await draftResponse('DESCONHECIDO', textBody, context, generoFinal, historicoConversa);
+          } else {
+            draft = SAUDACAO(generoFinal);
+          }
           io?.emit('alert', { phone, type: 'desconhecido', message: `Contato desconhecido: ${phone}` });
         }
     }

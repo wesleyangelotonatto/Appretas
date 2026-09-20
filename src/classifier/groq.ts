@@ -23,6 +23,7 @@ interface ClassifyInput {
   processes?: string[];
   messageText: string;
   customInstruction?: string | null;
+  historico?: Array<{ role: string; body: string }>;
 }
 
 interface ClassifyResult {
@@ -32,6 +33,10 @@ interface ClassifyResult {
 }
 
 export async function classifyContact(input: ClassifyInput): Promise<ClassifyResult> {
+  const historicoFormatado = input.historico?.length
+    ? input.historico.map(m => `${m.role === 'client' ? 'Cliente' : m.role === 'iara' ? 'Iara' : 'Wesley'}: ${m.body}`).join('\n')
+    : '(sem mensagens anteriores)';
+
   const prompt = `Você é um classificador de mensagens WhatsApp de um escritório de advocacia.
 
 Dados do contato:
@@ -40,16 +45,21 @@ Dados do contato:
 - Processos vinculados: ${input.processes?.join(', ') || 'nenhum'}
 ${input.customInstruction ? `- Instrução especial: ${input.customInstruction}` : ''}
 
-Mensagem recebida: "${input.messageText}"
+HISTÓRICO RECENTE DA CONVERSA (use para entender o contexto — a última mensagem pode só fazer sentido à luz do que já foi dito):
+${historicoFormatado}
+
+ÚLTIMA MENSAGEM DO CLIENTE (a que você deve classificar): "${input.messageText}"
 
 Classifique em EXATAMENTE um dos tipos abaixo:
-- PROCESSO_ATIVO: cliente cadastrado perguntando sobre processo em andamento
+- PROCESSO_ATIVO: cliente está trazendo ou detalhando dados de um processo específico (nome, parte contrária, número) para que ele seja localizado
 - NOVO_CASO_CLIENTE_ANTIGO: cliente cadastrado com assunto novo/diferente
 - LEAD_NOVO: número desconhecido buscando serviços jurídicos
 - NEGOCIO_PARTICULAR: parceiro/fornecedor/negócio não-advocatício
 - AMIGO_PESSOAL: conversa informal/pessoal sem cunho jurídico
 - INSTITUCIONAL: OAB, Maçonaria, conselho, associação
-- DESCONHECIDO: não é possível classificar com confiança
+- DESCONHECIDO: mensagem de acompanhamento/cobrança de prazo, reclamação sobre demora, agradecimento ou qualquer coisa que NÃO seja o cliente fornecendo dados novos do processo (ex.: "quanto tempo vai demorar", "por que ele não responde", "fico no aguardo")
+
+IMPORTANTE: se a mensagem for apenas uma cobrança de resposta, reclamação sobre demora ou agradecimento (não está fornecendo novos dados do processo), classifique como DESCONHECIDO, mesmo que o histórico seja sobre um processo.
 
 Responda APENAS com JSON válido:
 {"type": "TIPO", "confidence": 0.0-1.0, "intent": "resumo do que o contato quer"}`;
