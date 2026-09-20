@@ -196,10 +196,14 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
     const generoFinal: Genero = detectarGenero(textBody, displayName);
 
-    const isFirstMessage = !session;
-    if (isFirstMessage && classification.type !== 'PROCESSO_ATIVO') {
+    // Saudação apenas na primeira mensagem do dia (não repete em dias/mensagens subsequentes)
+    const hoje = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+    const isFirstContactEver = !session;
+    const isFirstMessageToday = !session?.updated_at || session.updated_at < hoje;
+    const shouldGreet = (isFirstContactEver || isFirstMessageToday) && classification.type !== 'PROCESSO_ATIVO';
+    if (shouldGreet) {
       await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
-      return;
+      if (isFirstContactEver) return; // novo contato: só saudação, aguarda resposta
     }
 
     let draft = '';
@@ -207,8 +211,21 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
-          const djenData = contact?.processes?.length ? await consultarDjen(contact.processes[0]) : null;
-          const trelloCard = contact?.processes?.length ? await buscarCardTrello(contact.processes[0]) : null;
+          // Se não há número de processo identificado, faz perguntas qualificadoras
+          if (!contact?.processes?.length) {
+            const qualifyInstruction = `O cliente quer informações sobre um processo mas não temos o número cadastrado.
+Faça perguntas qualificadoras de forma natural (máximo 2 perguntas por vez):
+- O processo está em nome de quem?
+- Sabe o número do processo?
+- Contra quem é a ação?
+- Em qual cidade/comarca tramita?
+Diga que vai buscar as informações assim que tiver esses dados.`;
+            context = JSON.stringify({ contact, intent: classification.intent, customInstruction, instrucao: qualifyInstruction });
+            draft = await draftResponse('PROCESSO_ATIVO', textBody, context, generoFinal);
+            break;
+          }
+          const djenData = await consultarDjen(contact.processes[0]);
+          const trelloCard = await buscarCardTrello(contact.processes[0]);
           context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, customInstruction });
           draft = await draftResponse(classification.type, textBody, context, generoFinal);
           break;
