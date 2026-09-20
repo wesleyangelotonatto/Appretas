@@ -6,7 +6,7 @@ import {
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
-  getActiveConversations,
+  getActiveConversations, getRecentCorrections,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -65,6 +65,7 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
     const original = approvals.find((a: any) => a.id === id);
     if (original && original.draft !== draft) {
       saveCorrection(phone, original.draft, draft, original.context);
+      console.log(`[correction] salva para ${phone} — original: "${original.draft.slice(0, 60)}..." → editado: "${draft.slice(0, 60)}..."`);
     }
 
     await sendMessage(phone, draft);
@@ -100,6 +101,11 @@ commandRouter.get('/pending', (_req, res) => {
 // GET /command/conversations — reconstrói o estado do painel após refresh (F5)
 commandRouter.get('/conversations', (_req, res) => {
   res.json(getActiveConversations(7));
+});
+
+// GET /command/corrections — lista correções salvas para treinamento (edições antes de aprovar)
+commandRouter.get('/corrections', (_req, res) => {
+  res.json(getRecentCorrections(50));
 });
 
 // POST /command/takeover — Wesley assume conversa
