@@ -8,7 +8,7 @@ const TOKEN = () => process.env.WASPEED_TOKEN || '';
 // Ponto único de bloqueio — cobre webhook, crons e painel, já que todos passam por aqui.
 // Controlado em tempo real pelo botão do painel (setting 'sistema_pausado' no banco);
 // a variável de ambiente SISTEMA_PAUSADO só serve como valor inicial antes do 1º toggle.
-function sistemaPausado(): boolean {
+export function sistemaPausado(): boolean {
   const setting = getSetting('sistema_pausado');
   if (setting !== null) return setting === '1';
   return process.env.SISTEMA_PAUSADO === 'true';

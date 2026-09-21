@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { parseCommand } from '../responder/claude';
-import { sendMessage, sendFile } from '../responder/send';
+import { sendMessage, sendFile, sistemaPausado } from '../responder/send';
 import {
   saveMessage, upsertSession, getHistory, scheduleFollowUp,
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
@@ -229,8 +229,7 @@ commandRouter.delete('/ausencia', (req: Request, res: Response) => {
 
 // GET /command/secretaria — retorna se a secretária está ativa
 commandRouter.get('/secretaria', (_req, res) => {
-  const pausado = getSetting('sistema_pausado') === '1';
-  res.json({ ativa: !pausado });
+  res.json({ ativa: !sistemaPausado() });
 });
 
 // POST /command/secretaria/pausar — desativa a secretária
