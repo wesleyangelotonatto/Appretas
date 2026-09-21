@@ -108,19 +108,6 @@ commandRouter.get('/corrections', (_req, res) => {
   res.json(getRecentCorrections(50));
 });
 
-// TEMPORÁRIO — purge de dados fictícios de teste
-commandRouter.delete('/test-data/:prefix', (req, res) => {
-  const { prefix } = req.params;
-  if (!/^\d{6,}$/.test(prefix)) return res.status(400).json({ error: 'Prefixo deve ter ao menos 6 dígitos' });
-  const db = require('../memory/db').getDb();
-  let total = 0;
-  for (const table of ['messages', 'sessions', 'pending_approvals', 'ausencia_notices']) {
-    const r = db.prepare(`DELETE FROM ${table} WHERE phone LIKE ?`).run(`${prefix}%`);
-    total += r.changes;
-  }
-  res.json({ ok: true, registros_removidos: total });
-});
-
 // POST /command/takeover — Wesley assume conversa
 commandRouter.post('/takeover', (req, res) => {
   const { phone } = req.body;
