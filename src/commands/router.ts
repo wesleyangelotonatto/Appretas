@@ -6,7 +6,7 @@ import {
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
-  getActiveConversations, getRecentCorrections,
+  getActiveConversations, getRecentCorrections, getAusenciaNotice, purgeTestData,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -107,6 +107,23 @@ commandRouter.get('/conversations', (_req, res) => {
 commandRouter.get('/corrections', (_req, res) => {
   res.json(getRecentCorrections(50));
 });
+
+// ─── TEMPORÁRIO — testes internos ────────────────────────────────────────────
+// GET /command/test-ausencia/:phone — inspeciona o registro de aviso de ausência de um telefone
+commandRouter.get('/test-ausencia/:phone', (req, res) => {
+  res.json(getAusenciaNotice(req.params.phone) || { phone: req.params.phone, sent_date: null, pending: 0 });
+});
+
+// DELETE /command/test-data/:prefix — apaga todo rastro de números de teste (prefixo mínimo 6 dígitos)
+commandRouter.delete('/test-data/:prefix', (req, res) => {
+  const { prefix } = req.params;
+  if (!/^\d{6,}$/.test(prefix)) {
+    return res.status(400).json({ error: 'Prefixo deve ter ao menos 6 dígitos numéricos' });
+  }
+  const removidos = purgeTestData(prefix);
+  res.json({ ok: true, prefix, registros_removidos: removidos });
+});
+// ──────────────────────────────────────────────────────────────────────────
 
 // POST /command/takeover — Wesley assume conversa
 commandRouter.post('/takeover', (req, res) => {

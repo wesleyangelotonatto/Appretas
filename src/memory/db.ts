@@ -318,6 +318,21 @@ export function purgeOldMessages(days = 90) {
   getDb().prepare('DELETE FROM messages WHERE created_at < ?').run(cutoff);
 }
 
+// Remove todo rastro de números de teste fictícios (prefixo restrito para evitar apagar dados reais)
+export function purgeTestData(prefix: string): number {
+  const db = getDb();
+  const like = `${prefix}%`;
+  let total = 0;
+  for (const table of ['messages', 'sessions', 'pending_approvals', 'ausencia_notices', 'corrections', 'group_permissions']) {
+    try {
+      const col = table === 'group_permissions' ? 'group_id' : 'phone';
+      const res = db.prepare(`DELETE FROM ${table} WHERE ${col} LIKE ?`).run(like);
+      total += res.changes;
+    } catch { /* tabela pode não ter a coluna phone */ }
+  }
+  return total;
+}
+
 // ─── Settings (modo ausência, etc.) ──────────────────────────────────────────
 
 export function getSetting(key: string): string | null {
