@@ -13,8 +13,6 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
 
     res.json({ status: 'received' });
 
-    console.log('[webhook] payload recebido:', JSON.stringify(payload).slice(0, 300));
-
     if (!payload || payload.eventID !== 'messages') {
       console.log('[webhook] ignorado — eventID:', payload?.eventID);
       return;
@@ -27,6 +25,25 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const body: string = last.text || det.body || '';
     const mediaUrl: string | undefined = det.mediaUrl || det.url || undefined;
     const messageType: string = det.type || last.type || 'chat';
+    const fromMe: boolean = !!(det.id?.fromMe || det.fromMe);
+    const isGroup: boolean = from.includes('@g.us') || String(from).includes('-');
+    const waName: string = String(payload.name || det.notifyName || '').trim();
+
+    if (!from) return;
+
+    // Ignora Status/Stories do WhatsApp — nunca é uma conversa real com um cliente,
+    // mesmo quando tem texto (ex: legenda de um Status de terceiros)
+    if (from === 'status' || from.startsWith('status@')) {
+      console.log('[webhook] ignorado — Status/Story do WhatsApp:', from);
+      return;
+    }
+
+    // Grupos: só registra silenciosamente para o painel decidir se ativa atendimento
+    // (nunca processa/responde), sem poluir o log com o payload completo
+    if (isGroup) {
+      await handleGroupMessage(from, req.app.locals.io);
+      return;
+    }
 
     // O campo com o conteúdo em base64 varia conforme o tipo de mídia/versão do Waspeed;
     // tenta os nomes mais comuns e remove prefixo "data:...;base64," se presente
@@ -38,27 +55,18 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
 
     const filename: string | undefined = det.filename || det.caption || undefined;
     const mimetype: string | undefined = det.mimetype || det.mimeType || undefined;
-    const fromMe: boolean = !!(det.id?.fromMe || det.fromMe);
-    const isGroup: boolean = from.includes('@g.us') || String(from).includes('-');
-    const waName: string = String(payload.name || det.notifyName || '').trim();
 
+    console.log('[webhook] payload recebido:', JSON.stringify(payload).slice(0, 300));
     console.log('[webhook] from:', from, '| fromMe:', fromMe, '| isGroup:', isGroup, '| body:', body.slice(0, 80));
     if (messageType === 'audio' || messageType === 'ptt' || messageType === 'document' || messageType === 'image') {
       console.log('[webhook] mídia — type:', messageType, '| eventDetails keys:', Object.keys(det), '| base64 length:', base64?.length || 0, '| mimetype:', mimetype);
     }
 
-    if (!from) return;
-
-    // Ignora eventos que não são mensagens reais (status/stories do WhatsApp, reações,
-    // confirmações de leitura, etc.) — sem texto e sem mídia não há nada para processar
+    // Ignora eventos que não são mensagens reais (reações, confirmações de leitura, etc.)
+    // — sem texto e sem mídia não há nada para processar
     const temConteudo = !!(body?.trim() || base64 || mediaUrl);
     if (!temConteudo) {
       console.log('[webhook] ignorado — evento sem conteúdo (não é mensagem real):', from);
-      return;
-    }
-
-    if (isGroup) {
-      await handleGroupMessage(from, body, req.app.locals.io);
       return;
     }
 
@@ -95,7 +103,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
-async function handleGroupMessage(groupId: string, _body: string, io: any) {
+async function handleGroupMessage(groupId: string, io: any) {
   const { getDb } = await import('../memory/db');
   const db = getDb();
   const existing = db.prepare('SELECT * FROM group_permissions WHERE group_id = ?').get(groupId);
