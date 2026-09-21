@@ -11,7 +11,7 @@ import { buscarCardTrello, buscarCardPorNomes, criarCardLead } from '../integrat
 import { saveDocument } from '../integrations/drive';
 import {
   aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
-  MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, JANELA_AUSENCIA,
+  MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, JANELA_AUSENCIA, HORARIO_ATENDIMENTO,
   MSG_PEDIR_DADOS_PROCESSO, detectarGenero, type Genero,
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
@@ -187,18 +187,21 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
-    // 7. Aviso de ausência: no máximo 1x por dia por contato, só entre 07h-22h.
-    // Fora dessa janela fica pendente e é entregue automaticamente quando ela reabrir (cron ausencia.ts).
-    const hojeStr = new Date().toLocaleDateString('sv-SE', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' });
-    const avisoAusencia = getAusenciaNotice(phone);
-    if (avisoAusencia?.sent_date !== hojeStr) {
-      if (isWithinAusenciaWindow()) {
-        await sendMessage(phone, MSG_FORA_HORARIO);
-        saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-        io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
-        marcarAusenciaEnviada(phone, hojeStr);
-      } else {
-        marcarAusenciaPendente(phone);
+    // 7. Aviso de ausência: só quando REALMENTE fora do horário comercial (08:30-17h, seg-sex).
+    // No máximo 1x por dia por contato. Entre 22h-7h (fora da janela de ausência) fica
+    // pendente e é entregue automaticamente quando ela reabrir às 7h (cron ausencia.ts).
+    if (!isWithinBusinessHours()) {
+      const hojeStr = new Date().toLocaleDateString('sv-SE', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' });
+      const avisoAusencia = getAusenciaNotice(phone);
+      if (avisoAusencia?.sent_date !== hojeStr) {
+        if (isWithinAusenciaWindow()) {
+          await sendMessage(phone, MSG_FORA_HORARIO);
+          saveMessage(phone, 'iara', MSG_FORA_HORARIO);
+          io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+          marcarAusenciaEnviada(phone, hojeStr);
+        } else {
+          marcarAusenciaPendente(phone);
+        }
       }
     }
 
@@ -420,7 +423,19 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
   }
 }
 
-// Janela em que o aviso de ausência pode ser enviado: 07h-22h, todos os dias da semana
+// Horário comercial real: seg-sex, 08:30-17:00 — define QUANDO o aviso de ausência é necessário
+function isWithinBusinessHours(): boolean {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
+  const day = now.getDay();
+  if (day === 0 || day === 6) return false;
+  const totalMinutes = now.getHours() * 60 + now.getMinutes();
+  const inicio = HORARIO_ATENDIMENTO.semana.inicio * 60 + HORARIO_ATENDIMENTO.semana.inicioMinuto;
+  const fim = HORARIO_ATENDIMENTO.semana.fim * 60;
+  return totalMinutes >= inicio && totalMinutes < fim;
+}
+
+// Janela de silêncio: 07h-22h, todos os dias — define QUANDO é permitido efetivamente
+// transmitir o aviso de ausência (evita mandar mensagem de madrugada)
 function isWithinAusenciaWindow(): boolean {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
   const hora = now.getHours();
