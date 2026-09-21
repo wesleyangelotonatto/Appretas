@@ -108,6 +108,17 @@ commandRouter.get('/corrections', (_req, res) => {
   res.json(getRecentCorrections(50));
 });
 
+// TEMPORÁRIO — limpa a sessão fantasma (phone='') poluída por Status do WhatsApp antes da correção
+commandRouter.delete('/cleanup-empty-phone', (_req, res) => {
+  const db = require('../memory/db').getDb();
+  let total = 0;
+  for (const table of ['messages', 'sessions', 'ausencia_notices']) {
+    const r = db.prepare(`DELETE FROM ${table} WHERE phone = ''`).run();
+    total += r.changes;
+  }
+  res.json({ ok: true, registros_removidos: total });
+});
+
 // POST /command/takeover — Wesley assume conversa
 commandRouter.post('/takeover', (req, res) => {
   const { phone } = req.body;
