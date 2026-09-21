@@ -105,7 +105,11 @@ export function SAUDACAO(g: Genero = 'N'): string {
   return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou disponível para receber sua mensagem e repassá-la ao Dr. Wesley. Como posso ${ajudarSufixo(g)}?`;
 }
 
-export const MSG_FORA_HORARIO = `Aqui é a *secretária* do doutor Wesley. Ele trabalha em horário comercial (08:30 às 17:00 - Seg a Sex). Em casos graves como prisão, acidente ou busca e apreensão, ligue várias vezes no telefone do Dr. Wesley diretamente. Caso contrário, retornaremos na próxima janela de atendimento ou me conta aqui o que precisa.`;
+export const MSG_FORA_HORARIO = `Oi, aqui é a *Iara secretária* do doutor Wesley. Ele trabalha em horário comercial (08:30 às 17:00 - Seg a Sex) e te responde diretamente assim que possível. Em casos graves (prisão, acidente ou busca e apreensão, etc), ligue várias vezes no telefone do Dr. Wesley diretamente. Ou, pode deixar o recado aqui que eu repasso pra ele.`;
+
+// Janela em que o aviso de ausência pode ser enviado (todos os dias). Fora dela, nada é
+// enviado automaticamente — fica pendente e só é entregue quando a janela reabrir.
+export const JANELA_AUSENCIA = { inicio: 7, fim: 22 };
 
 export function MSG_ENCERRAMENTO(g: Genero = 'N'): string {
   return `Há mais alguma coisa em que eu possa ${ajudarSufixo(g)} ou repassar ao Dr. Wesley?`;

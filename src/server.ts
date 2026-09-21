@@ -13,6 +13,7 @@ import { cronPrazos } from './cron/prazos';
 import { cronFollowUps } from './cron/followups';
 import { cronNaoRespondidos } from './cron/naorespondidos';
 import { cronResumosDiarios } from './cron/resumos';
+import { cronAusenciaPendentes } from './cron/ausencia';
 
 const PORT = process.env.PORT || 3000;
 
@@ -59,6 +60,7 @@ cron.schedule('0 8 * * 1-5', () => cronPrazos(), { timezone: TZ });        // se
 cron.schedule('0 * * * *', () => cronFollowUps(), { timezone: TZ });       // a cada hora
 cron.schedule('0 * * * *', () => cronNaoRespondidos(), { timezone: TZ });  // a cada hora — avisos de não-esquecemos
 cron.schedule('0 22 * * *', () => cronResumosDiarios(), { timezone: TZ }); // todo dia às 22h — resumos + Drive + nota Waspeed
+cron.schedule('0 7 * * *', () => cronAusenciaPendentes(), { timezone: TZ }); // todo dia às 07h — entrega avisos de ausência pendentes
 
 async function main() {
   await initDb();

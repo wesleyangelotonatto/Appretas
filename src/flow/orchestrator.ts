@@ -1,5 +1,5 @@
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory } from '../memory/db';
+import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, getAusenciaNotice, marcarAusenciaEnviada, marcarAusenciaPendente } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -11,7 +11,7 @@ import { buscarCardTrello, buscarCardPorNomes, criarCardLead } from '../integrat
 import { saveDocument } from '../integrations/drive';
 import {
   aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
-  MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, HORARIO_ATENDIMENTO,
+  MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, JANELA_AUSENCIA,
   MSG_PEDIR_DADOS_PROCESSO, detectarGenero, type Genero,
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
@@ -187,11 +187,19 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
-    // 7. Informa horário fora do expediente (não bloqueia — atendimento 24h; enviado automaticamente só 1x por sessão)
-    if (!isWithinBusinessHours() && !session) {
-      await sendMessage(phone, MSG_FORA_HORARIO);
-      saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-      io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+    // 7. Aviso de ausência: no máximo 1x por dia por contato, só entre 07h-22h.
+    // Fora dessa janela fica pendente e é entregue automaticamente quando ela reabrir (cron ausencia.ts).
+    const hojeStr = new Date().toLocaleDateString('sv-SE', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' });
+    const avisoAusencia = getAusenciaNotice(phone);
+    if (avisoAusencia?.sent_date !== hojeStr) {
+      if (isWithinAusenciaWindow()) {
+        await sendMessage(phone, MSG_FORA_HORARIO);
+        saveMessage(phone, 'iara', MSG_FORA_HORARIO);
+        io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+        marcarAusenciaEnviada(phone, hojeStr);
+      } else {
+        marcarAusenciaPendente(phone);
+      }
     }
 
     // 8. Detecta urgência
@@ -412,12 +420,9 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
   }
 }
 
-function isWithinBusinessHours(): boolean {
+// Janela em que o aviso de ausência pode ser enviado: 07h-22h, todos os dias da semana
+function isWithinAusenciaWindow(): boolean {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
-  const day = now.getDay();
-  if (day === 0 || day === 6) return false;
-  const totalMinutes = now.getHours() * 60 + now.getMinutes();
-  const inicio = HORARIO_ATENDIMENTO.semana.inicio * 60 + HORARIO_ATENDIMENTO.semana.inicioMinuto;
-  const fim = HORARIO_ATENDIMENTO.semana.fim * 60;
-  return totalMinutes >= inicio && totalMinutes < fim;
+  const hora = now.getHours();
+  return hora >= JANELA_AUSENCIA.inicio && hora < JANELA_AUSENCIA.fim;
 }

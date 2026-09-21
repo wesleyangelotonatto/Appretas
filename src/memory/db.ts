@@ -100,6 +100,14 @@ export async function initDb(): Promise<void> {
       created_at INTEGER DEFAULT (unixepoch())
     );
 
+    -- Controle do aviso de ausência: sent_date (YYYY-MM-DD) impede reenvio no mesmo dia;
+    -- pending=1 marca contato que mandou mensagem fora da janela 07h-22h, aguardando a próxima abertura
+    CREATE TABLE IF NOT EXISTS ausencia_notices (
+      phone TEXT PRIMARY KEY,
+      sent_date TEXT,
+      pending INTEGER DEFAULT 0
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
@@ -186,6 +194,29 @@ export function saveCorrection(phone: string, original: string, corrected: strin
 export function getRecentCorrections(limit = 20): Array<{ original: string; corrected: string }> {
   return getDb().prepare('SELECT original, corrected FROM corrections ORDER BY created_at DESC LIMIT ?')
     .all(limit) as any[];
+}
+
+export function getAusenciaNotice(phone: string): { phone: string; sent_date: string | null; pending: number } | undefined {
+  return getDb().prepare('SELECT * FROM ausencia_notices WHERE phone = ?').get(phone) as any;
+}
+
+export function marcarAusenciaEnviada(phone: string, dataHoje: string) {
+  getDb().prepare(`
+    INSERT INTO ausencia_notices (phone, sent_date, pending) VALUES (?, ?, 0)
+    ON CONFLICT(phone) DO UPDATE SET sent_date = excluded.sent_date, pending = 0
+  `).run(phone, dataHoje);
+}
+
+export function marcarAusenciaPendente(phone: string) {
+  getDb().prepare(`
+    INSERT INTO ausencia_notices (phone, sent_date, pending) VALUES (?, NULL, 1)
+    ON CONFLICT(phone) DO UPDATE SET pending = 1
+  `).run(phone);
+}
+
+export function getAusenciasPendentes(): string[] {
+  return (getDb().prepare('SELECT phone FROM ausencia_notices WHERE pending = 1').all() as any[])
+    .map(r => r.phone);
 }
 
 export function isBlacklisted(phone: string): boolean {

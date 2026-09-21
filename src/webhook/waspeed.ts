@@ -4,6 +4,9 @@ import { detectAppointment } from '../flow/appointmentDetector';
 
 export const webhookRouter = Router();
 
+// Número do agendador eletrônico — nunca tratado como cliente (normalizado, ver normalizePhone)
+const AGENDADOR_PHONE = process.env.AGENDADOR_PHONE || '554488596158';
+
 webhookRouter.post('/', async (req: Request, res: Response) => {
   try {
     const payload = req.body;
@@ -46,12 +49,27 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
 
     if (!from) return;
 
+    // Ignora eventos que não são mensagens reais (status/stories do WhatsApp, reações,
+    // confirmações de leitura, etc.) — sem texto e sem mídia não há nada para processar
+    const temConteudo = !!(body?.trim() || base64 || mediaUrl);
+    if (!temConteudo) {
+      console.log('[webhook] ignorado — evento sem conteúdo (não é mensagem real):', from);
+      return;
+    }
+
     if (isGroup) {
       await handleGroupMessage(from, body, req.app.locals.io);
       return;
     }
 
     const phone = normalizePhone(from);
+
+    // Número do agendador eletrônico: nunca é tratado como cliente, só recebe a notificação
+    // automática de compromisso (ver appointmentDetector.ts) — qualquer mensagem vinda dele é ignorada
+    if (phone === AGENDADOR_PHONE) {
+      console.log('[webhook] ignorado — mensagem do número agendador:', phone);
+      return;
+    }
 
     // Mensagens enviadas por Wesley: detecta agendamentos e não processa pelo pipeline
     if (fromMe) {

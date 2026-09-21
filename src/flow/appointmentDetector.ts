@@ -100,10 +100,10 @@ Responda APENAS com JSON válido:
   io?.emit('appointment', { phone, name, dateIso: info.dateIso, dateLabel, timestamp: Date.now() });
   console.log(`[agenda] atendimento registrado — ${name} — ${dateLabel}`);
 
-  // 4. Notifica Wesley
+  // 4. Notifica o agendador eletrônico
   try {
-    await sendMessage(WESLEY_NUMERO, `Agendar Atendimento com ${name} para ${dateLabel} ✓`);
+    await sendMessage(WESLEY_NUMERO, `Agendar compromisso com ${name} em ${dateLabel}`);
   } catch (err) {
-    console.error('[agenda] erro ao notificar Wesley:', err);
+    console.error('[agenda] erro ao notificar agendador:', err);
   }
 }

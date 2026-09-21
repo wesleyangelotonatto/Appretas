@@ -107,7 +107,22 @@ export function getConversasSemResposta(): Array<{ phone: string; name: string |
   `).all(dozeHorasAtras, seiHorasAtras) as any[];
 }
 
+// Só envia seg-sex 07h-20h; fora disso, as conversas continuam elegíveis e são
+// pegas automaticamente na próxima execução horária dentro da janela
+function isWithinJanelaRetorno(): boolean {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
+  const dia = now.getDay();
+  if (dia === 0 || dia === 6) return false;
+  const hora = now.getHours();
+  return hora >= 7 && hora < 20;
+}
+
 export async function cronNaoRespondidos(): Promise<void> {
+  if (!isWithinJanelaRetorno()) {
+    console.log('[cron-naorespondido] fora da janela (seg-sex 07h-20h), aguardando próxima execução');
+    return;
+  }
+
   const conversas = getConversasSemResposta();
   let enviados = 0;
 
