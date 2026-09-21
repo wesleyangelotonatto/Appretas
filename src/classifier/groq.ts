@@ -64,19 +64,21 @@ IMPORTANTE: se a mensagem for apenas uma cobrança de resposta, reclamação sob
 Responda APENAS com JSON válido:
 {"type": "TIPO", "confidence": 0.0-1.0, "intent": "resumo do que o contato quer"}`;
 
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 200,
-    messages: [{ role: 'user', content: prompt }],
-  });
-
-  const text = message.content[0].type === 'text' ? message.content[0].text : '{}';
   try {
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 200,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const block = message.content[0];
+    const text = block && block.type === 'text' ? block.text : '{}';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     const result = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     if (result.confidence < 0.7) result.type = 'DESCONHECIDO';
     return result as ClassifyResult;
-  } catch {
+  } catch (err) {
+    console.error('[classifier] erro na classificação:', err);
     return { type: 'DESCONHECIDO', confidence: 0, intent: 'falha na classificação' };
   }
 }

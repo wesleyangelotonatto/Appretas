@@ -7,9 +7,18 @@ import { lookupSheets } from '../lookup/sheets';
 // 2º: sexta-feira — audiências da próxima semana
 // 3º: véspera (dia anterior) da audiência
 
+// Reduz uma data ao ano/mês/dia em São Paulo, fixado à meia-noite UTC — permite
+// subtrair getTime() com segurança para obter diferença exata de dias em calendário
+function toSaoPauloDateOnly(date: Date): Date {
+  const spString = date.toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' });
+  const sp = new Date(spString);
+  return new Date(Date.UTC(sp.getFullYear(), sp.getMonth(), sp.getDate()));
+}
+
 export async function cronAudiencias(): Promise<void> {
   const today = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
   const dayOfWeek = today.getDay(); // 5 = sexta
+  const todayDateOnly = toSaoPauloDateOnly(new Date());
 
   const cards = await getCardsAudiencias();
 
@@ -25,7 +34,9 @@ export async function cronAudiencias(): Promise<void> {
       const contact = await lookupSheets(phone);
       const clientName = contact?.name || 'cliente';
 
-      const daysUntil = Math.ceil((audienciaDate.getTime() - today.getTime()) / 86400000);
+      // Diferença em dias de calendário (São Paulo), não em horas cruas — evita
+      // desvio de fuso horário entre o epoch de "today" (já deslocado) e audienciaDate (UTC real)
+      const daysUntil = Math.round((toSaoPauloDateOnly(audienciaDate).getTime() - todayDateOnly.getTime()) / 86400000);
 
       // 2º aviso: sexta-feira, audiências da próxima semana (7 dias)
       if (dayOfWeek === 5 && daysUntil > 0 && daysUntil <= 7) {

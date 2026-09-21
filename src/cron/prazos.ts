@@ -12,8 +12,12 @@ export async function cronPrazos(): Promise<void> {
 
   for (const card of cards) {
     try {
-      const prazoDate = extractDueDateFromCard(card);
-      if (!prazoDate) continue;
+      const prazoDateRaw = extractDueDateFromCard(card);
+      if (!prazoDateRaw) continue;
+      // Normaliza para o fuso de São Paulo antes de comparar — sem isso, comparar
+      // getDate()/getMonth() de um Date com getters locais do servidor (UTC no Railway)
+      // contra "today" (já em São Paulo) pode acusar prazo errado perto da meia-noite
+      const prazoDate = new Date(prazoDateRaw.toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
 
       // Verifica se o prazo é hoje
       const isToday =

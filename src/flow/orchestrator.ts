@@ -295,8 +295,12 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
     const generoFinal: Genero = detectarGenero(textBody, displayName);
 
-    // Saudação uma vez por dia (primeiro contato do dia)
-    const hoje = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+    // Saudação uma vez por dia (primeiro contato do dia). session.updated_at é um epoch
+    // REAL (unixepoch() do SQLite), então o corte de "hoje" precisa ser um epoch real
+    // também — não dá para comparar com um Date "fingindo" ser local em outro fuso
+    // (Railway roda em UTC; Brasil é UTC-3 fixo, sem horário de verão desde 2019)
+    const spNow = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
+    const hoje = Math.floor(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate(), 3, 0, 0) / 1000);
     const isFirstMessageToday = !session || !session.updated_at || session.updated_at < hoje;
     if (isFirstMessageToday) {
       await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
