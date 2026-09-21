@@ -51,11 +51,13 @@ export async function lookupSheets(phone: string): Promise<ContactInfo | null> {
       const cellPhone = String(row[phoneColIndex] || '').replace(/[^0-9]/g, '');
       if (!cellPhone) continue;
 
-      // Compara sufixo (8 dígitos) para tolerância de formatação
+      // Compara sufixo de 10 dígitos (DDD + número) para tolerar formatação diferente
+      // (com/sem 55, com/sem o 9 extra) sem colidir entre DDDs diferentes — 8 dígitos
+      // (sem DDD) já causou casos reais de atribuir cliente errado por coincidência
       if (
         cellPhone === normalizedSearch ||
-        cellPhone.endsWith(normalizedSearch.slice(-8)) ||
-        normalizedSearch.endsWith(cellPhone.slice(-8))
+        cellPhone.endsWith(normalizedSearch.slice(-10)) ||
+        normalizedSearch.endsWith(cellPhone.slice(-10))
       ) {
         const name = nameColIndex >= 0 ? String(row[nameColIndex] || '') : 'Desconhecido';
         const processRaw = processColIndex >= 0 ? String(row[processColIndex] || '') : '';

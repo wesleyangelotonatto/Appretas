@@ -58,14 +58,22 @@ export async function buscarCardPorNomes(nomeParte: string, nomeContraParte?: st
 }
 
 export async function atualizarCardTrello(cardId: string, updates: { name?: string; desc?: string; idList?: string }): Promise<void> {
-  await axios.put(`${BASE}/cards/${cardId}`, { ...updates, ...auth() });
+  try {
+    await axios.put(`${BASE}/cards/${cardId}`, { ...updates, ...auth() });
+  } catch (err) {
+    console.error('[trello] erro ao atualizar card:', err);
+  }
 }
 
 export async function adicionarNotaCard(cardId: string, nota: string): Promise<void> {
-  await axios.post(`${BASE}/cards/${cardId}/actions/comments`, {
-    text: nota,
-    ...auth(),
-  });
+  try {
+    await axios.post(`${BASE}/cards/${cardId}/actions/comments`, {
+      text: nota,
+      ...auth(),
+    });
+  } catch (err) {
+    console.error('[trello] erro ao adicionar nota no card:', err);
+  }
 }
 
 interface LeadData {

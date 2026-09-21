@@ -368,9 +368,9 @@
       return bL - aL;
     });
     list.innerHTML = sorted.map(([phone, conv]) => `
-      <div class="conv-item ${activePhone === phone ? 'active' : ''}" onclick="selectConv('${phone}')">
+      <div class="conv-item ${activePhone === phone ? 'active' : ''}" onclick="selectConv(${JSON.stringify(phone).replace(/"/g, '&quot;')})">
         <div class="name">${escHtml(conv.name||phone)}<span class="type-badge type-${conv.type}">${conv.type.replace('_',' ')}</span></div>
-        <div class="phone">${phone}</div>
+        <div class="phone">${escHtml(phone)}</div>
         <div class="last-msg">${escHtml((conv.messages[conv.messages.length-1]?.body||'').substring(0,60))}</div>
         <div class="status-indicator ${conv.status}">${statusLabel(conv.status)}</div>
       </div>
@@ -445,22 +445,25 @@
     section.className = 'approvals-section has-items';
     list.innerHTML = filtered.map(a => `
       <div class="approval-item" id="apr-${a.id}">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Para: <b>${a.phone}</b></div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Para: <b>${escHtml(a.phone)}</b></div>
         <div class="draft-text" id="draft-text-${a.id}">${escHtml(a.draft)}</div>
         <textarea class="edit-area" id="edit-${a.id}">${escHtml(a.draft)}</textarea>
         <div class="approval-actions">
-          <button class="btn btn-approve" onclick="approveResponse(${a.id},'${a.phone}')">Aprovar e Enviar</button>
+          <button class="btn btn-approve" onclick="approveResponse(${a.id})">Aprovar e Enviar</button>
           <button class="btn btn-pause" onclick="showEdit(${a.id})">Editar</button>
-          <button class="btn btn-approve" onclick="approveEdited(${a.id},'${a.phone}')" id="send-edited-${a.id}" style="display:none">Enviar Editado</button>
+          <button class="btn btn-approve" onclick="approveEdited(${a.id})" id="send-edited-${a.id}" style="display:none">Enviar Editado</button>
           <button class="btn btn-danger" onclick="discardApproval(${a.id})">Descartar</button>
         </div>
       </div>
     `).join('');
   }
 
-  async function approveResponse(id, phone) {
-    const draft = document.getElementById(`draft-text-${id}`)?.textContent;
-    await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,draft})});
+  // Busca o telefone/rascunho ORIGINAL em memória (não no DOM) — ler de volta do HTML
+  // renderizado perde as quebras de linha (viravam <br>, textContent as concatena)
+  async function approveResponse(id) {
+    const approval = pendingApprovals.find(a => a.id === id);
+    if (!approval) return;
+    await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:approval.phone,draft:approval.draft})});
     pendingApprovals = pendingApprovals.filter(a => a.id !== id);
     renderApprovals();
   }
@@ -470,9 +473,11 @@
     document.getElementById(`send-edited-${id}`).style.display='inline-block';
   }
 
-  async function approveEdited(id, phone) {
+  async function approveEdited(id) {
+    const approval = pendingApprovals.find(a => a.id === id);
+    if (!approval) return;
     const draft = document.getElementById(`edit-${id}`).value;
-    await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,draft})});
+    await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:approval.phone,draft})});
     pendingApprovals = pendingApprovals.filter(a => a.id !== id);
     renderApprovals();
   }
@@ -773,8 +778,8 @@
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px;border-bottom:1px solid var(--border);">
           <div style="font-size:13px;">${escHtml(g.group_name || g.group_id)}</div>
           ${g.active
-            ? `<button class="btn" style="background:#c0392b;color:#fff;font-size:11px;padding:4px 8px;" onclick="toggleGroupActive('${g.group_id}', false)">Desativar</button>`
-            : `<button class="btn btn-followup" style="font-size:11px;padding:4px 8px;" onclick="toggleGroupActive('${g.group_id}', true)">Ativar</button>`}
+            ? `<button class="btn" style="background:#c0392b;color:#fff;font-size:11px;padding:4px 8px;" onclick="toggleGroupActive(${JSON.stringify(g.group_id).replace(/"/g, '&quot;')}, false)">Desativar</button>`
+            : `<button class="btn btn-followup" style="font-size:11px;padding:4px 8px;" onclick="toggleGroupActive(${JSON.stringify(g.group_id).replace(/"/g, '&quot;')}, true)">Ativar</button>`}
         </div>
       `).join('');
     } catch(e) { container.innerHTML = '<div style="color:var(--red);font-size:12px;">Erro ao carregar grupos.</div>'; }

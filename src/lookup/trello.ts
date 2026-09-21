@@ -25,12 +25,18 @@ export async function lookupTrello(phone: string): Promise<{ name: string; displ
         const title = String(card.name || '');
         const combined = `${title} ${desc}`;
 
-        // Procura pelo número de telefone nos campos do card
-        const phoneInCard = combined.replace(/[^0-9]/g, '');
-        if (
-          phoneInCard.includes(normalizedPhone) ||
-          normalizedPhone.includes(phoneInCard.slice(-8))
-        ) {
+        // Procura pelo número de telefone nos campos do card. Antes comparava os últimos
+        // 8 dígitos de TODO o texto combinado (título+descrição), que podem vir de um
+        // número de processo, não de telefone — causava mistura de casos entre clientes
+        // diferentes por coincidência numérica. Agora só considera sequências de 10-13
+        // dígitos consecutivos (formato real de telefone) encontradas no texto do card.
+        const numerosNoCard = combined.match(/\d{10,13}/g) || [];
+        const bateuTelefone = numerosNoCard.some(num => {
+          const n = num.slice(-10);
+          const p = normalizedPhone.slice(-10);
+          return n === p;
+        });
+        if (bateuTelefone) {
           // Extrai nome do card (tenta descrição primeiro, depois título)
           const displayName = extractNameFromCard(title, desc);
           const processes = extractProcessNumbers(desc);

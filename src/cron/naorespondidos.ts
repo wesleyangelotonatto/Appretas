@@ -59,8 +59,12 @@ const VARIACOES = [
 ];
 
 function escolherVariacao(phone: string, nome: string): string {
-  // Usa últimos dígitos do telefone + hora para variar de forma determinística
-  const seed = (parseInt(phone.slice(-3)) + new Date().getHours()) % VARIACOES.length;
+  // Usa últimos dígitos do telefone + hora para variar de forma determinística.
+  // parseInt pode retornar NaN se phone não terminar em dígitos (ex: JID de grupo) —
+  // nesse caso cai no índice 0 em vez de travar o cron inteiro para os demais contatos
+  const parsed = parseInt(phone.slice(-3));
+  const base = isNaN(parsed) ? 0 : parsed;
+  const seed = (base + new Date().getHours()) % VARIACOES.length;
   return VARIACOES[seed](nome);
 }
 
@@ -133,10 +137,9 @@ export async function cronNaoRespondidos(): Promise<void> {
       continue;
     }
 
-    const primeiroNome = conv.name ? conv.name.split(' ')[0] : '';
-    const mensagem = escolherVariacao(conv.phone, primeiroNome);
-
     try {
+      const primeiroNome = conv.name ? conv.name.split(' ')[0] : '';
+      const mensagem = escolherVariacao(conv.phone, primeiroNome);
       await sendMessage(conv.phone, mensagem);
       saveMessage(conv.phone, 'iara', mensagem);
       console.log(`[cron-naorespondido] aviso enviado para ${conv.phone}`);
