@@ -6,8 +6,9 @@ import {
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
-  getActiveConversations, getRecentCorrections,
+  getActiveConversations, getRecentCorrections, getAusenciaNotice, marcarAusenciaPendente,
 } from '../memory/db';
+import { cronAusenciaPendentes } from '../cron/ausencia';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
 
@@ -107,6 +108,31 @@ commandRouter.get('/conversations', (_req, res) => {
 commandRouter.get('/corrections', (_req, res) => {
   res.json(getRecentCorrections(50));
 });
+
+// ─── TEMPORÁRIO — teste do fluxo de ausência pendente (janela fechada → reabertura) ─────────
+commandRouter.get('/test-ausencia/:phone', (req, res) => {
+  res.json(getAusenciaNotice(req.params.phone) || { phone: req.params.phone, sent_date: null, pending: 0 });
+});
+commandRouter.post('/test-mark-pending/:phone', (req, res) => {
+  marcarAusenciaPendente(req.params.phone);
+  res.json({ ok: true, phone: req.params.phone });
+});
+commandRouter.post('/test-run-ausencia-cron', async (_req, res) => {
+  await cronAusenciaPendentes();
+  res.json({ ok: true });
+});
+commandRouter.delete('/test-data/:prefix', (req, res) => {
+  const { prefix } = req.params;
+  if (!/^\d{6,}$/.test(prefix)) return res.status(400).json({ error: 'Prefixo deve ter ao menos 6 dígitos' });
+  const db = require('../memory/db').getDb();
+  let total = 0;
+  for (const table of ['messages', 'sessions', 'pending_approvals', 'ausencia_notices']) {
+    const r = db.prepare(`DELETE FROM ${table} WHERE phone LIKE ?`).run(`${prefix}%`);
+    total += r.changes;
+  }
+  res.json({ ok: true, registros_removidos: total });
+});
+// ──────────────────────────────────────────────────────────────────────────────────────────
 
 // POST /command/takeover — Wesley assume conversa
 commandRouter.post('/takeover', (req, res) => {
