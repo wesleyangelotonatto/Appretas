@@ -223,6 +223,32 @@ commandRouter.delete('/ausencia', (req: Request, res: Response) => {
   res.json({ ok: true });
 });
 
+// ─── Ativar/Desativar a secretária (Iara) ──────────────────────────────────────
+// Enquanto pausada, nenhuma mensagem sai para o WhatsApp (webhook, crons e painel
+// continuam recebendo e processando normalmente, só o envio real é bloqueado)
+
+// GET /command/secretaria — retorna se a secretária está ativa
+commandRouter.get('/secretaria', (_req, res) => {
+  const pausado = getSetting('sistema_pausado') === '1';
+  res.json({ ativa: !pausado });
+});
+
+// POST /command/secretaria/pausar — desativa a secretária
+commandRouter.post('/secretaria/pausar', (req: Request, res: Response) => {
+  setSetting('sistema_pausado', '1');
+  req.app.locals.io?.emit('secretaria_update', { ativa: false });
+  console.log('[secretaria] PAUSADA pelo painel');
+  res.json({ ok: true, ativa: false });
+});
+
+// POST /command/secretaria/ativar — reativa a secretária
+commandRouter.post('/secretaria/ativar', (req: Request, res: Response) => {
+  setSetting('sistema_pausado', '0');
+  req.app.locals.io?.emit('secretaria_update', { ativa: true });
+  console.log('[secretaria] REATIVADA pelo painel');
+  res.json({ ok: true, ativa: true });
+});
+
 async function executeCommand(parsed: any, io: any): Promise<any> {
   const { action, params } = parsed;
 

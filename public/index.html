@@ -130,6 +130,7 @@
   <div class="status-dot" id="conn-dot" style="background:var(--red)"></div>
   <h1>Iara — Secretária Virtual</h1>
   <span id="mode-badge" class="mode-badge">MODO TREINO</span>
+  <button id="btn-secretaria" onclick="toggleSecretaria()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--green);background:#0a2d10;color:var(--green);cursor:pointer;">Secretária: Ativa</button>
   <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
   <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
   <div class="integration-status">
@@ -696,6 +697,49 @@
   });
 
   checkAusencia();
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ─── Ativar/Desativar Secretária ────────────────────────────────────────────
+  let secretariaAtiva = true;
+
+  async function checkSecretaria() {
+    try {
+      const r = await fetch('/command/secretaria');
+      const d = await r.json();
+      secretariaAtiva = d.ativa;
+      updateSecretariaBtn();
+    } catch(e) {}
+  }
+
+  function updateSecretariaBtn() {
+    const btn = document.getElementById('btn-secretaria');
+    if (secretariaAtiva) {
+      btn.style.background = '#0a2d10'; btn.style.borderColor = 'var(--green)'; btn.style.color = 'var(--green)';
+      btn.textContent = 'Secretária: Ativa';
+    } else {
+      btn.style.background = '#c0392b'; btn.style.borderColor = '#c0392b'; btn.style.color = '#fff';
+      btn.textContent = 'Secretária: PAUSADA';
+    }
+  }
+
+  async function toggleSecretaria() {
+    if (secretariaAtiva) {
+      if (!confirm('Pausar a secretária? Nenhuma mensagem será enviada aos clientes até você reativar.')) return;
+      await fetch('/command/secretaria/pausar', {method:'POST'});
+      secretariaAtiva = false;
+    } else {
+      await fetch('/command/secretaria/ativar', {method:'POST'});
+      secretariaAtiva = true;
+    }
+    updateSecretariaBtn();
+  }
+
+  socket.on('secretaria_update', (data) => {
+    secretariaAtiva = data.ativa;
+    updateSecretariaBtn();
+  });
+
+  checkSecretaria();
   // ─────────────────────────────────────────────────────────────────────────
 
   document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); }));

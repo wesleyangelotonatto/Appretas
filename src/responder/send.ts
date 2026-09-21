@@ -1,11 +1,16 @@
 import axios from 'axios';
+import { getSetting } from '../memory/db';
 
 const API_URL = () => process.env.WASPEED_API_URL || 'https://api-whatsapp.wascript.com.br';
 const TOKEN = () => process.env.WASPEED_TOKEN || '';
 
-// Trava de emergência: quando SISTEMA_PAUSADO=true, nenhum envio sai para o WhatsApp.
+// Trava de emergência: quando pausado, nenhum envio sai para o WhatsApp.
 // Ponto único de bloqueio — cobre webhook, crons e painel, já que todos passam por aqui.
+// Controlado em tempo real pelo botão do painel (setting 'sistema_pausado' no banco);
+// a variável de ambiente SISTEMA_PAUSADO só serve como valor inicial antes do 1º toggle.
 function sistemaPausado(): boolean {
+  const setting = getSetting('sistema_pausado');
+  if (setting !== null) return setting === '1';
   return process.env.SISTEMA_PAUSADO === 'true';
 }
 
