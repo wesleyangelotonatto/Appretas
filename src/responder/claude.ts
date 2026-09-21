@@ -55,7 +55,8 @@ Redija a resposta da Iara considerando tudo que já foi dito na conversa. Máxim
     messages: [{ role: 'user', content: userPrompt }],
   });
 
-  const draft = response.content[0].type === 'text' ? response.content[0].text : '';
+  const block = response.content[0];
+  const draft = block && block.type === 'text' ? block.text : '';
   return aplicarGlossario(draft);
 }
 
@@ -97,7 +98,8 @@ Responda APENAS com o JSON puro, sem markdown, sem \`\`\`, sem texto antes ou de
     messages: [{ role: 'user', content: prompt }],
   });
 
-  const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+  const block = response.content[0];
+  const text = block && block.type === 'text' ? block.text : '{}';
   try {
     // Remove markdown fences (```json ... ```) caso o modelo os inclua mesmo sendo instruído a não fazê-lo
     const cleaned = text.replace(/```json\s*|```\s*/g, '').trim();

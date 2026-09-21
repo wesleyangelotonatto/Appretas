@@ -60,7 +60,8 @@ Responda APENAS com JSON válido:
       max_tokens: 200,
       messages: [{ role: 'user', content: prompt }],
     });
-    const text = message.content[0].type === 'text' ? message.content[0].text : '{}';
+    const block = message.content[0];
+    const text = block && block.type === 'text' ? block.text : '{}';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     info = JSON.parse(jsonMatch ? jsonMatch[0] : text);
   } catch (err) {
@@ -69,6 +70,14 @@ Responda APENAS com JSON válido:
   }
 
   if (!info.detected || info.confidence < 0.80 || !info.dateIso) return;
+
+  // Valida que a IA retornou uma data real e parseável antes de usar — evita salvar
+  // "Invalid Date" no Calendar e mandar isso como notificação para o Wesley
+  const dataValida = !isNaN(new Date(info.dateIso).getTime());
+  if (!dataValida) {
+    console.error('[agenda] data inválida retornada pela IA:', info.dateIso);
+    return;
+  }
 
   const name = info.contactName || contactName || phone;
 

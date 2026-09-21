@@ -5,9 +5,17 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+// Início do dia em São Paulo, como epoch real (Brasil é UTC-3 fixo, sem horário de
+// verão desde 2019) — usar new Date().setHours() usaria o fuso do servidor (UTC no
+// Railway), deslocando o corte em até 3h e cortando/perdendo mensagens do fim do dia
+function inicioDiaSaoPaulo(): number {
+  const spNow = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
+  return Math.floor(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate(), 3, 0, 0) / 1000);
+}
+
 // Retorna todos os phones que tiveram mensagens hoje
 function getPhonesComConversaHoje(): Array<{ phone: string; name: string | null }> {
-  const inicioDia = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+  const inicioDia = inicioDiaSaoPaulo();
   return getDb().prepare(`
     SELECT DISTINCT m.phone, s.name
     FROM messages m
@@ -20,7 +28,7 @@ function getPhonesComConversaHoje(): Array<{ phone: string; name: string | null 
 
 // Retorna todas as mensagens do dia para um phone
 function getMensagensHoje(phone: string): Array<{ role: string; body: string; created_at: number }> {
-  const inicioDia = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+  const inicioDia = inicioDiaSaoPaulo();
   return getDb().prepare(`
     SELECT role, body, created_at
     FROM messages
@@ -55,7 +63,8 @@ Regras: sem emojis, sem travessão, linguagem formal e direta.`,
     }],
   });
 
-  return response.content[0].type === 'text' ? response.content[0].text.trim() : `Resumo do dia ${hoje}: conversa registrada com ${name || phone}.`;
+  const block = response.content[0];
+  return block && block.type === 'text' ? block.text.trim() : `Resumo do dia ${hoje}: conversa registrada com ${name || phone}.`;
 }
 
 export async function cronResumosDiarios(): Promise<void> {

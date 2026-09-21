@@ -138,15 +138,25 @@ export function getSession(phone: string) {
   return getDb().prepare('SELECT * FROM sessions WHERE phone = ?').get(phone) as any;
 }
 
+// Colunas que upsertSession pode escrever — protege contra injeção via nomes de coluna
+// caso algum chamador futuro derive as chaves de dados externos (payload de webhook, etc.)
+const SESSION_COLUNAS_PERMITIDAS = new Set(['name', 'type', 'status']);
+
 export function upsertSession(phone: string, data: Record<string, any>) {
+  const chaves = Object.keys(data);
+  const chavesInvalidas = chaves.filter(k => !SESSION_COLUNAS_PERMITIDAS.has(k));
+  if (chavesInvalidas.length > 0) {
+    throw new Error(`upsertSession: coluna(s) não permitida(s): ${chavesInvalidas.join(', ')}`);
+  }
+
   const existing = getSession(phone);
   if (existing) {
-    const sets = Object.keys(data).map(k => `${k} = ?`).join(', ');
+    const sets = chaves.map(k => `${k} = ?`).join(', ');
     getDb().prepare(`UPDATE sessions SET ${sets}, updated_at = unixepoch() WHERE phone = ?`)
       .run(...Object.values(data), phone);
   } else {
     getDb().prepare(
-      `INSERT INTO sessions (phone, ${Object.keys(data).join(', ')}) VALUES (?, ${Object.keys(data).map(() => '?').join(', ')})`
+      `INSERT INTO sessions (phone, ${chaves.join(', ')}) VALUES (?, ${chaves.map(() => '?').join(', ')})`
     ).run(phone, ...Object.values(data));
   }
 }

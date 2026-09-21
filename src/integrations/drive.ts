@@ -16,11 +16,19 @@ function getDrive() {
   return google.drive({ version: 'v3', auth: getAuth() });
 }
 
+// Escapa aspas simples e barras invertidas antes de interpolar em uma query do Drive
+// (name vem de nome de contato do WhatsApp/Trello, não confiável — ex: "O'Brien" quebraria a query)
+function escapeDriveQueryValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 async function findOrCreateFolder(name: string, parentId: string): Promise<string> {
   const drive = getDrive();
+  const safeName = escapeDriveQueryValue(name);
+  const safeParentId = escapeDriveQueryValue(parentId);
 
   const res = await drive.files.list({
-    q: `name = '${name}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`,
+    q: `name = '${safeName}' and mimeType = 'application/vnd.google-apps.folder' and '${safeParentId}' in parents and trashed = false`,
     fields: 'files(id)',
   });
 
