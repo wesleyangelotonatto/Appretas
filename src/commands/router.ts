@@ -6,7 +6,7 @@ import {
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
-  getActiveConversations, getRecentCorrections,
+  getActiveConversations, getRecentCorrections, getGroups, setGroupActive,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -246,6 +246,29 @@ commandRouter.post('/secretaria/ativar', (req: Request, res: Response) => {
   req.app.locals.io?.emit('secretaria_update', { ativa: true });
   console.log('[secretaria] REATIVADA pelo painel');
   res.json({ ok: true, ativa: true });
+});
+
+// ─── Grupos: quais têm atendimento por IA ativado ──────────────────────────────
+
+// GET /command/groups — lista grupos já vistos e se estão ativos
+commandRouter.get('/groups', (_req, res) => {
+  res.json(getGroups());
+});
+
+// POST /command/groups/:groupId/activate — Iara passa a responder neste grupo
+commandRouter.post('/groups/:groupId/activate', (req: Request, res: Response) => {
+  setGroupActive(req.params.groupId, true);
+  req.app.locals.io?.emit('group_update', { groupId: req.params.groupId, active: true });
+  console.log('[groups] ativado:', req.params.groupId);
+  res.json({ ok: true });
+});
+
+// POST /command/groups/:groupId/deactivate — Iara para de responder neste grupo
+commandRouter.post('/groups/:groupId/deactivate', (req: Request, res: Response) => {
+  setGroupActive(req.params.groupId, false);
+  req.app.locals.io?.emit('group_update', { groupId: req.params.groupId, active: false });
+  console.log('[groups] desativado:', req.params.groupId);
+  res.json({ ok: true });
 });
 
 async function executeCommand(parsed: any, io: any): Promise<any> {

@@ -38,10 +38,37 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    // Grupos: só registra silenciosamente para o painel decidir se ativa atendimento
-    // (nunca processa/responde), sem poluir o log com o payload completo
+    // Grupos: só respondem se o Wesley ativou explicitamente pelo painel (Grupos).
+    // Por padrão só registra silenciosamente, sem processar nem poluir o log.
     if (isGroup) {
-      await handleGroupMessage(from, req.app.locals.io);
+      const { upsertGroupSeen, isGroupActive } = await import('../memory/db');
+      upsertGroupSeen(from, waName);
+
+      if (!isGroupActive(from)) {
+        await handleGroupMessage(from, req.app.locals.io);
+        return;
+      }
+
+      if (fromMe) return; // não reage às próprias mensagens do Wesley no grupo
+
+      // Grupo ativado: processa a mensagem normalmente, usando o ID do grupo como "telefone"
+      let base64rawGrupo: string | undefined = det.base64 || det.data || det.file || det.media || last.base64 || undefined;
+      if (base64rawGrupo?.startsWith('data:')) base64rawGrupo = base64rawGrupo.split(',')[1];
+      const temConteudoGrupo = !!(body?.trim() || base64rawGrupo || mediaUrl);
+      if (!temConteudoGrupo) return;
+
+      console.log('[webhook] mensagem em grupo ATIVADO:', from, '| body:', body.slice(0, 80));
+      await handleIncomingMessage({
+        phone: from,
+        body,
+        mediaUrl,
+        messageType,
+        waName,
+        base64: base64rawGrupo,
+        filename: det.filename || det.caption || undefined,
+        mimetype: det.mimetype || det.mimeType || undefined,
+        io: req.app.locals.io,
+      });
       return;
     }
 
@@ -103,14 +130,12 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
   }
 });
 
+// Grupo ainda não ativado: só emite alerta na primeira vez que o painel o vê
+const gruposAlertados = new Set<string>();
 async function handleGroupMessage(groupId: string, io: any) {
-  const { getDb } = await import('../memory/db');
-  const db = getDb();
-  const existing = db.prepare('SELECT * FROM group_permissions WHERE group_id = ?').get(groupId);
-  if (!existing) {
-    db.prepare('INSERT OR IGNORE INTO group_permissions (group_id, active) VALUES (?, 0)').run(groupId);
-    io?.emit('new_group', { groupId, message: `Mensagem recebida no grupo ${groupId}. Incluir atendimento automatizado por IA?` });
-  }
+  if (gruposAlertados.has(groupId)) return;
+  gruposAlertados.add(groupId);
+  io?.emit('new_group', { groupId, message: `Novo grupo detectado. Ative pelo painel (Grupos) se quiser que a Iara responda aqui.` });
 }
 
 export function normalizePhone(raw: string): string {

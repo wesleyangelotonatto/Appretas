@@ -219,6 +219,28 @@ export function getAusenciasPendentes(): string[] {
     .map(r => r.phone);
 }
 
+// ─── Grupos do WhatsApp: quais têm atendimento por IA ativado ───────────────────
+
+export function upsertGroupSeen(groupId: string, groupName: string) {
+  getDb().prepare(`
+    INSERT INTO group_permissions (group_id, group_name, active) VALUES (?, ?, 0)
+    ON CONFLICT(group_id) DO UPDATE SET group_name = excluded.group_name
+  `).run(groupId, groupName || groupId);
+}
+
+export function getGroups(): Array<{ group_id: string; group_name: string; active: number; created_at: number }> {
+  return getDb().prepare('SELECT * FROM group_permissions ORDER BY created_at DESC').all() as any[];
+}
+
+export function isGroupActive(groupId: string): boolean {
+  const row = getDb().prepare('SELECT active FROM group_permissions WHERE group_id = ?').get(groupId) as any;
+  return !!row?.active;
+}
+
+export function setGroupActive(groupId: string, active: boolean) {
+  getDb().prepare('UPDATE group_permissions SET active = ? WHERE group_id = ?').run(active ? 1 : 0, groupId);
+}
+
 export function isBlacklisted(phone: string): boolean {
   return !!getDb().prepare('SELECT 1 FROM blacklist WHERE phone = ?').get(phone);
 }
