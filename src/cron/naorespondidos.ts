@@ -1,40 +1,67 @@
 import { getDb, saveMessage } from '../memory/db';
 import { sendMessage } from '../responder/send';
+import Anthropic from '@anthropic-ai/sdk';
 
-// Padrões de encerramento inequívoco — lista CONSERVADORA.
-// Na dúvida, NÃO filtra: é melhor enviar um aviso a mais do que deixar
-// o cliente sem retorno. Somente frases que claramente encerram a conversa.
-const ENCERRAMENTOS = [
-  // Confirmações isoladas sem contexto pendente
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Padrões de encerramento inequívoco — atalho rápido sem custo de API para os
+// casos mais óbvios. Qualquer coisa fora dessa lista curta passa pela checagem
+// semântica via IA abaixo, que é o que realmente decide.
+const ENCERRAMENTOS_OBVIOS = [
   /^ok[\s!.]*$/i,
   /^certo[\s!.]*$/i,
   /^entendido[\s!.]*$/i,
   /^combinado[\s!.]*$/i,
   /^perfeito[\s!.]*$/i,
-  /^tudo\s*bem[\s!.]*$/i,
-  /^tá\s*(bem|bom|ótimo|certo|ok)[\s!.]*$/i,
-  /^tudo\s*(certo|ok|ótimo|bem)[\s!.]*$/i,
-  /^pode\s*ser[\s!.]*$/i,
-  /^flw[\s!.]*$/i,
   /^👍[\s!.]*$/,
-  // Agradecimento SEM pedido junto (âncora no início da frase curta)
   /^(muito\s+)?obrigad[oa][\s!.,]*$/i,
-  /^(muito\s+)?obrigad[oa],?\s*(dr\.?\s*wesley|iara|doutor)?[\s!.]*$/i,
   /^valeu[\s!.]*$/i,
-  // Despedidas
-  /^até\s*(mais|logo|breve|amanhã|segunda|depois)[\s!.]*$/i,
-  /^(um\s+)?abraço[\s!.]*$/i,
-  /^boa\s*(noite|tarde|semana)[\s!.]*$/i,
-  /^bom\s*(dia|fim\s*de\s*semana)[\s!.]*$/i,
 ];
 
-// Retorna true SOMENTE se a mensagem claramente encerra a conversa.
-// Mensagem vazia (mídia/documento sem legenda) → NÃO é encerramento,
-// o cliente enviou algo para análise e está aguardando retorno.
-function pareceEncerramento(body: string): boolean {
-  const texto = body.trim();
-  if (!texto) return false; // mídia sem legenda → aguarda análise
-  return ENCERRAMENTOS.some(re => re.test(texto));
+// Decide, com apoio de IA, se a última mensagem do cliente realmente ainda
+// aguarda uma resposta do escritório. Regras puramente por palavra-chave
+// erram demais (ex.: "boa tarde" pode ser saudação de despedida OU abertura
+// de uma pergunta) — por isso usamos o modelo para julgar com o contexto
+// das últimas mensagens. Em caso de erro/indefinição, NÃO envia o aviso:
+// um aviso a menos é preferível a incomodar um cliente que não está esperando nada
+// (foi exatamente o erro relatado — o padrão antigo assumia o oposto).
+async function precisaDeAviso(phone: string, ultimaMsgCliente: string): Promise<boolean> {
+  const texto = (ultimaMsgCliente || '').trim();
+  if (!texto) return false; // mídia sem legenda → aguarda análise, mas isso é raro nesse fluxo
+  if (ENCERRAMENTOS_OBVIOS.some(re => re.test(texto))) return false;
+
+  try {
+    const db = getDb();
+    const historico = db.prepare(
+      `SELECT role, body FROM messages WHERE phone = ? ORDER BY created_at DESC LIMIT 6`
+    ).all(phone) as Array<{ role: string; body: string }>;
+    const historicoFormatado = historico.reverse()
+      .map(m => `${m.role === 'client' ? 'Cliente' : 'Escritório'}: ${m.body}`)
+      .join('\n');
+
+    const prompt = `Você avalia se uma conversa de WhatsApp de um escritório de advocacia está genuinamente aguardando resposta do escritório, ou se o cliente não está esperando nada (despedida, agradecimento isolado, confirmação sem pergunta, assunto encerrado, mensagem apenas informativa, etc.).
+
+HISTÓRICO RECENTE (mais antiga primeiro):
+${historicoFormatado}
+
+A ÚLTIMA mensagem foi do cliente: "${texto}"
+
+O escritório ainda deve uma resposta a essa mensagem? Responda APENAS com JSON: {"aguardando": true ou false}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const block = response.content[0];
+    const raw = block && block.type === 'text' ? block.text : '{}';
+    const match = raw.match(/\{[\s\S]*\}/);
+    const result = JSON.parse(match ? match[0] : raw);
+    return result.aguardando !== false;
+  } catch (err) {
+    console.error('[cron-naorespondido] falha ao avaliar necessidade de aviso, não enviando por segurança:', err);
+    return false;
+  }
 }
 
 // Variações para não repetir sempre a mesma mensagem
@@ -131,9 +158,10 @@ export async function cronNaoRespondidos(): Promise<void> {
   let enviados = 0;
 
   for (const conv of conversas) {
-    // Ignora se a última mensagem do cliente parece encerramento de conversa
-    if (pareceEncerramento(conv.ultima_msg_body || '')) {
-      console.log(`[cron-naorespondido] ignorado (encerramento) — ${conv.phone}: "${conv.ultima_msg_body}"`);
+    // Ignora se a IA avaliar que o cliente não está de fato aguardando resposta
+    const precisa = await precisaDeAviso(conv.phone, conv.ultima_msg_body || '');
+    if (!precisa) {
+      console.log(`[cron-naorespondido] ignorado (não aguarda resposta) — ${conv.phone}: "${conv.ultima_msg_body}"`);
       continue;
     }
 

@@ -106,10 +106,16 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    // Mensagens enviadas por Wesley: detecta agendamentos e não processa pelo pipeline
+    // Mensagens enviadas por Wesley diretamente pelo WhatsApp (fora do painel): registra
+    // como resposta do staff (para o cron de "não respondidos" saber que já foi respondido)
+    // e detecta agendamentos, mas não processa pelo pipeline de IA
     if (fromMe) {
-      const { getSession } = await import('../memory/db');
+      const { getSession, saveMessage } = await import('../memory/db');
       const session = getSession(phone);
+      if (body?.trim()) {
+        saveMessage(phone, 'wesley', body);
+        req.app.locals.io?.emit('message', { phone, role: 'wesley', body, timestamp: Date.now() });
+      }
       detectAppointment(phone, body, session?.name, req.app.locals.io).catch(() => {});
       return;
     }
