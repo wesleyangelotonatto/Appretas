@@ -178,6 +178,17 @@ const SUGESTAO_LIGAR_DIRETO_RE = /(ligue|liga|entre em contato|contate|procure|f
 
 export const MSG_FALLBACK_COBRANCA_PRAZO = `Entendo a preocupação. O Dr. Wesley atende muitos casos e clientes, por isso o retorno costuma levar até 1 dia útil. Vou continuar acompanhando e cobrando internamente para que ele responda o quanto antes.`;
 
+// Correção de segurança: converte terceira pessoa para primeira pessoa nos padrões mais comuns
+// (a IA às vezes escreve "a Iara vai" em vez de "vou", apesar da instrução no system prompt)
+const TERCEIRA_PESSOA_FIXES: Array<[RegExp, string]> = [
+  [/\ba\s+\*?Iara\*?\s+vai\b/gi, 'vou'],
+  [/\ba\s+\*?secretária\*?\s+vai\b/gi, 'vou'],
+  [/\ba\s+\*?Iara\*?\s+está\b/gi, 'estou'],
+  [/\ba\s+\*?Iara\*?\s+anotou\b/gi, 'anotei'],
+  [/\ba\s+\*?Iara\*?\s+verificou\b/gi, 'verifiquei'],
+  [/\ba\s+\*?Iara\*?\s+recebeu\b/gi, 'recebi'],
+];
+
 export function aplicarGlossario(texto: string): string {
   // Se a IA sugeriu que o cliente ligue/contate o Dr. Wesley diretamente, descarta a
   // mensagem inteira e usa a resposta padrão segura (a resolução nunca é terceirizada ao cliente)
@@ -192,6 +203,9 @@ export function aplicarGlossario(texto: string): string {
   }
   for (const re of FRASES_PROIBIDAS) {
     resultado = resultado.replace(re, '').replace(/\s{2,}/g, ' ').trim();
+  }
+  for (const [padrao, correto] of TERCEIRA_PESSOA_FIXES) {
+    resultado = resultado.replace(padrao, correto);
   }
   // Remove tags HTML (a IA às vezes gera <br> em vez de quebra de linha real)
   resultado = resultado.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[a-z][^>]*>/gi, '');
@@ -239,6 +253,7 @@ REGRAS ABSOLUTAS (nunca violar):
 9. Nunca usar tags HTML como <br>, <b>, <i> etc. Para separar parágrafos, use apenas quebra de linha simples (linha em branco)
 10. Nunca inicie a resposta com saudação ("Bom dia", "Boa tarde", "Boa noite", "Olá") nem com autoapresentação ("Aqui é a Iara, secretária do Dr. Wesley"). Isso já foi feito uma única vez pelo sistema no início da conversa do dia. Vá direto ao assunto da mensagem do cliente
 11. JAMAIS sugerir, em qualquer hipótese, que o cliente ligue ou entre em contato diretamente com o Dr. Wesley pelo telefone. A resolução é sempre puxada para a *Iara*: se o cliente cobrar demora, explique que o Dr. Wesley atende muitos casos e clientes, que o retorno ocorre em até 1 dia útil, e que ela mesma vai continuar acompanhando e cobrando internamente. Nunca terceirizar o contato para o cliente
+12. Fale SEMPRE em primeira pessoa quando se referir a si mesma. Errado: "A Iara vai anotar tudo", "A secretária vai verificar". Certo: "Vou anotar tudo", "Vou verificar". Use "*Iara*"/"*secretária*" na terceira pessoa apenas na autoapresentação inicial (feita pelo sistema) — depois disso, sempre "eu", "vou", "verifiquei", nunca "ela", "a Iara vai"
 
 LINGUAGEM E TOM:
 - Tom formal e profissional, como secretária de escritório de advocacia conceituado
