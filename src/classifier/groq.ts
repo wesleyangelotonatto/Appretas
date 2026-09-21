@@ -51,13 +51,13 @@ ${historicoFormatado}
 ÚLTIMA MENSAGEM DO CLIENTE (a que você deve classificar): "${input.messageText}"
 
 Classifique em EXATAMENTE um dos tipos abaixo:
-- PROCESSO_ATIVO: cliente está trazendo ou detalhando dados de um processo específico (nome, parte contrária, número) para que ele seja localizado
+- PROCESSO_ATIVO: cliente está trazendo ou detalhando dados de um caso específico para que ele seja localizado — pode ser um PROCESSO judicial (nome, parte contrária, número) OU um CONTRATO/serviço não-judicial (nome, com quem é o contrato, número se houver). Nem todo caso do escritório é um processo judicial — pode ser elaboração/revisão de contrato, consultoria, ou outro serviço contratado
 - NOVO_CASO_CLIENTE_ANTIGO: cliente cadastrado com assunto novo/diferente
 - LEAD_NOVO: número desconhecido buscando serviços jurídicos
 - NEGOCIO_PARTICULAR: parceiro/fornecedor/negócio não-advocatício
 - AMIGO_PESSOAL: conversa informal/pessoal sem cunho jurídico
 - INSTITUCIONAL: OAB, Maçonaria, conselho, associação
-- DESCONHECIDO: mensagem de acompanhamento/cobrança de prazo, reclamação sobre demora, agradecimento ou qualquer coisa que NÃO seja o cliente fornecendo dados novos do processo (ex.: "quanto tempo vai demorar", "por que ele não responde", "fico no aguardo")
+- DESCONHECIDO: mensagem de acompanhamento/cobrança de prazo, reclamação sobre demora, agradecimento ou qualquer coisa que NÃO seja o cliente fornecendo dados novos do processo/contrato (ex.: "quanto tempo vai demorar", "por que ele não responde", "fico no aguardo")
 
 IMPORTANTE: se a mensagem for apenas uma cobrança de resposta, reclamação sobre demora ou agradecimento (não está fornecendo novos dados do processo), classifique como DESCONHECIDO, mesmo que o histórico seja sobre um processo.
 

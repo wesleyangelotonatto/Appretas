@@ -12,6 +12,7 @@ import { saveDocument } from '../integrations/drive';
 import {
   aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
   MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, JANELA_AUSENCIA, HORARIO_ATENDIMENTO,
+  MSG_EMAIL, MSG_PIX,
   MSG_PEDIR_DADOS_PROCESSO, detectarGenero, type Genero,
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
@@ -66,9 +67,11 @@ function isLikelyPersonName(name: string): boolean {
 const NOME_PATTERNS = [
   /(?:meu\s+nome\s+é|me\s+chamo|sou\s+(?:o|a)\s|nome\s*[:\s]|parte\s*[:\s]|requerente\s*[:\s]|autor\s*[:\s])\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)/i,
 ];
+// Cobre tanto processo ("contra fulano", "réu é fulano") quanto contrato ("contrato com fulano")
 const CONTRA_PARTE_PATTERNS = [
   /contra\s+(?:o\s+|a\s+)?([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)/i,
   /(?:réu|requerido|ré|requerida|parte\s+contrária|outra\s+parte)\s*(?:é|:)?\s*([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)/i,
+  /contrato\s+com\s+(?:o\s+|a\s+)?([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)+)/i,
 ];
 const PROCESSO_PATTERN = /\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/;
 
@@ -252,6 +255,14 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
         message: `${contact?.name || phone} ${recusaSecretaria ? 'recusou a secretária e' : ''} pediu para falar com o Dr. Wesley`,
       });
       await deliverOrQueue(phone, msgResposta, 'pedido_advogado', io, contact?.name);
+      return;
+    }
+
+    // 12b. E-mail e PIX: resposta fixa (não gerada por IA) para nunca inventar/errar o dado
+    const pedidoPix = /\bpix\b/i.test(textBody);
+    const pedidoEmail = !pedidoPix && /e-?mail/i.test(textBody);
+    if (pedidoPix || pedidoEmail) {
+      await deliverOrQueue(phone, pedidoPix ? MSG_PIX : MSG_EMAIL, pedidoPix ? 'pedido_pix' : 'pedido_email', io, contact?.name);
       return;
     }
 

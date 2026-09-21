@@ -6,7 +6,7 @@ import type { ClassificationType } from '../classifier/groq';
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const TYPE_INSTRUCTIONS: Record<string, string> = {
-  PROCESSO_ATIVO: `O cliente é um cliente ativo com processo em andamento. Informe sobre o andamento de forma simples e clara, usando os dados do DJEN e Trello fornecidos. Se não houver dados, diga que vai verificar com o Dr. Wesley.`,
+  PROCESSO_ATIVO: `O cliente é um cliente ativo com um caso em andamento — pode ser um processo judicial ou um contrato/serviço não-judicial (elaboração, revisão, consultoria). Não assuma que é sempre um processo judicial. Informe sobre o andamento de forma simples e clara, usando os dados do DJEN e Trello fornecidos quando existirem (DJEN só se aplica a processo judicial). Se não houver dados, diga que vai verificar com o Dr. Wesley.`,
   NOVO_CASO_CLIENTE_ANTIGO: `O cliente é um cliente já atendido anteriormente, mas está trazendo um assunto novo. Recepcione-o, pergunte sobre o novo assunto e diga que vai repassar ao Dr. Wesley.`,
   LEAD_NOVO: `É um potencial novo cliente. Recepcione formalmente, pergunte o nome, o que precisa e peça para detalhar a situação. Se for caso jurídico, peça que envie documentos se tiver.`,
   NEGOCIO_PARTICULAR: `É um contato de negócio (não-advocatício). Recepcione educadamente, anote a pauta e diga que vai repassar ao Dr. Wesley.`,

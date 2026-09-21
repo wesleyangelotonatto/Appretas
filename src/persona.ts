@@ -121,10 +121,16 @@ export const MSG_URGENCIA_AGUARDAR = `Sua mensagem foi recebida e a *Iara* está
 
 export const MSG_PEDIR_ADVOGADO = `Vou comunicar ao Dr. Wesley sua solicitação. A *Iara* anotou e ele retornará assim que possível.`;
 
-// Pergunta qualificadora obrigatória para localizar processo: nome completo (se faltar) + contra quem (obrigatório) + número (recomendável)
+// E-mail e PIX são respostas fixas (não geradas por IA) para garantir que o dado nunca
+// seja inventado ou alterado por erro de geração — especialmente crítico para o PIX.
+export const MSG_EMAIL = `O e-mail do Dr. Wesley é wesleyveigaadvogados@gmail.com`;
+
+export const MSG_PIX = `Os dados para PIX são:\nChave: wesleyveigaadvogados@gmail.com\nBanco: Sicoob\nTitular: Wesley Angelo Tonatto Veiga\nConta Corrente: 395.590-7`;
+
+// Pergunta qualificadora obrigatória para localizar processo/contrato: nome completo (se faltar) + contra quem/com quem (obrigatório) + número (recomendável)
 export function MSG_PEDIR_DADOS_PROCESSO(temNome: boolean): string {
-  const pedirNome = temNome ? '' : 'Para localizar o processo, preciso do nome completo da parte. ';
-  return `${pedirNome}Preciso saber contra quem é o processo e, de preferência, o número. Caso não tenha essas informações, preciso aguardar o Dr. Wesley me responder.`;
+  const pedirNome = temNome ? '' : 'Para localizar o caso, preciso do nome completo da parte. ';
+  return `${pedirNome}Preciso saber contra quem é o processo (ou com quem é o contrato) e, de preferência, o número. Caso não tenha essas informações, preciso aguardar o Dr. Wesley me responder.`;
 }
 
 export function MSG_RECUSA_SECRETARIA(g: Genero = 'N'): string {
