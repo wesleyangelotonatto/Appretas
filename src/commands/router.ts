@@ -141,7 +141,7 @@ commandRouter.post('/handback', (req, res) => {
 commandRouter.post('/send', async (req, res) => {
   const { phone, message } = req.body;
   try {
-    await sendMessage(phone, message);
+    await sendMessage(phone, message, { assinar: false });
     saveMessage(phone, 'wesley', message);
     req.app.locals.io?.emit('message', { phone, role: 'wesley', body: message, timestamp: Date.now() });
     res.json({ ok: true });
@@ -289,7 +289,7 @@ async function executeCommand(parsed: any, io: any): Promise<any> {
 
   switch (action) {
     case 'send_message':
-      await sendMessage(params.phone, params.message);
+      await sendMessage(params.phone, params.message, { assinar: false });
       saveMessage(params.phone, 'wesley', params.message);
       io?.emit('message', { phone: params.phone, role: 'wesley', body: params.message, timestamp: Date.now() });
       return { sent: true };

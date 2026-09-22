@@ -44,16 +44,33 @@ export function isEcoDeEnvioProprio(phone: string, text: string): boolean {
   return true;
 }
 
-export async function sendMessage(phone: string, text: string): Promise<void> {
+// Assinatura em negrito e itálico no topo de toda fala da Iara (no WhatsApp,
+// *_texto_* é negrito + itálico). Fica em linha própria, antes do texto.
+export const ASSINATURA_IARA = '*_Iara - Secretária_*';
+
+function assinarComoIara(text: string): string {
+  if (text.startsWith(ASSINATURA_IARA)) return text;
+  return `${ASSINATURA_IARA}\n${text}`;
+}
+
+// assinar=false para mensagens que NÃO são da Iara: envio direto do Wesley pelo
+// painel e avisos internos ao agendador. O padrão é assinar, de modo que qualquer
+// novo ponto de envio da Iara já saia identificado sem precisar lembrar disso.
+export async function sendMessage(
+  phone: string,
+  text: string,
+  opts: { assinar?: boolean } = {}
+): Promise<void> {
   if (sistemaPausado()) {
     console.log(`[send] BLOQUEADO (sistema pausado) — mensagem NÃO enviada para ${phone}`);
     return;
   }
-  registrarEnvioProprio(phone, text);
+  const corpo = opts.assinar === false ? text : assinarComoIara(text);
+  registrarEnvioProprio(phone, corpo);
   try {
     await axios.post(`${API_URL()}/api/enviar-texto/${TOKEN()}`, {
       phone,
-      message: text,
+      message: corpo,
     });
   } catch (err: any) {
     console.error('[send] erro ao enviar mensagem:', err?.response?.data || err.message);

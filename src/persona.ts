@@ -105,7 +105,9 @@ export function SAUDACAO(g: Genero = 'N'): string {
   return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou disponível para receber sua mensagem e repassá-la ao Dr. Wesley. Como posso ${ajudarSufixo(g)}?`;
 }
 
-export const MSG_FORA_HORARIO = `Oi, aqui é a *Iara secretária* do doutor Wesley. Ele trabalha em horário comercial (08:30 às 17:00 - Seg a Sex) e te responde diretamente assim que possível. Em casos graves (prisão, acidente ou busca e apreensão, etc), ligue várias vezes no telefone do Dr. Wesley diretamente. Ou, pode deixar o recado aqui que eu repasso pra ele.`;
+// Sem a apresentação no corpo: toda mensagem já sai assinada com "Iara - Secretária"
+// em negrito e itálico na linha de cima (ver ASSINATURA_IARA em responder/send.ts)
+export const MSG_FORA_HORARIO = `Oi! O doutor Wesley trabalha em horário comercial (08:30 às 17:00 - Seg a Sex) e te responde diretamente assim que possível. Em casos graves (prisão, acidente ou busca e apreensão, etc), ligue várias vezes no telefone do Dr. Wesley diretamente. Ou, pode deixar o recado aqui que eu repasso pra ele.`;
 
 // Janela em que o aviso de ausência pode ser enviado (todos os dias). Fora dela, nada é
 // enviado automaticamente — fica pendente e só é entregue quando a janela reabrir.
@@ -117,7 +119,7 @@ export function MSG_ENCERRAMENTO(g: Genero = 'N'): string {
 
 export const MSG_PROCESSO_NAO_ENCONTRADO = `Estou verificando o andamento com o Dr. Wesley e retorno em breve.`;
 
-export const MSG_URGENCIA_AGUARDAR = `Sua mensagem foi recebida e a *Iara* está verificando com o Dr. Wesley. Retornaremos em breve.`;
+export const MSG_URGENCIA_AGUARDAR = `Sua mensagem foi recebida e já estou verificando com o Dr. Wesley. Retorno em breve.`;
 
 export const MSG_PEDIR_ADVOGADO = `Vou comunicar ao Dr. Wesley sua solicitação. A *Iara* anotou e ele retornará assim que possível.`;
 
