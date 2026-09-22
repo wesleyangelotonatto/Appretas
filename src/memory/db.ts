@@ -210,6 +210,19 @@ export function getAusenciaNotice(phone: string): { phone: string; sent_date: st
   return getDb().prepare('SELECT * FROM ausencia_notices WHERE phone = ?').get(phone) as any;
 }
 
+// Wesley respondeu alguém há pouco? Se ele está atendendo agora, dizer ao cliente
+// que ele só retorna em horário comercial contradiz o que o cliente está vendo.
+// Sem telefone: qualquer contato (ele assumiu o atendimento). Com telefone:
+// apenas aquela conversa. Só conta fala digitada por ele — o eco das mensagens
+// da própria Iara é descartado na entrada do webhook.
+export function houveRespostaDeWesley(minutos: number, phone?: string): boolean {
+  const limite = Math.floor(Date.now() / 1000) - minutos * 60;
+  const row = phone
+    ? getDb().prepare(`SELECT 1 FROM messages WHERE role = 'wesley' AND created_at > ? AND phone = ? LIMIT 1`).get(limite, phone)
+    : getDb().prepare(`SELECT 1 FROM messages WHERE role = 'wesley' AND created_at > ? LIMIT 1`).get(limite);
+  return !!row;
+}
+
 // Reivindica o aviso de ausência do dia de forma ATÔMICA: retorna true só para a
 // primeira chamada do dia para esse telefone. Duas mensagens do mesmo contato
 // chegando juntas (ex.: duas fotos no mesmo segundo) passavam as duas pela

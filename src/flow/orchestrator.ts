@@ -1,5 +1,5 @@
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia } from '../memory/db';
+import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -193,7 +193,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // 7. Aviso de ausência: só quando REALMENTE fora do horário comercial (08:30-17h, seg-sex).
     // No máximo 1x por dia por contato. Entre 22h-7h (fora da janela de ausência) fica
     // pendente e é entregue automaticamente quando ela reabrir às 7h (cron ausencia.ts).
-    if (!isWithinBusinessHours()) {
+    if (!isWithinBusinessHours() && !wesleyAtendendoAgora(phone)) {
       const hojeStr = new Date().toLocaleDateString('sv-SE', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' });
       const avisoAusencia = getAusenciaNotice(phone);
       if (avisoAusencia?.sent_date !== hojeStr) {
@@ -447,6 +447,30 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
 }
 
 // Horário comercial real: seg-sex, 08:30-17:00 — define QUANDO o aviso de ausência é necessário
+// Quantos minutos de silêncio do Wesley para considerar que ele parou de atender
+const MINUTOS_ATIVIDADE_WESLEY = parseInt(process.env.MINUTOS_ATIVIDADE_WESLEY || '') || 90;
+
+// Interrompe o aviso de ausência quando Wesley está atendendo fora do horário:
+// não faz sentido avisar que ele só responde em horário comercial enquanto ele
+// está ali respondendo. Vale tanto para a própria conversa quanto para o plantão
+// em geral — ao assumir a fila, ele atende vários contatos seguidos.
+function wesleyAtendendoAgora(phone: string): boolean {
+  try {
+    if (houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
+      console.log(`[ausencia] suprimido — Wesley já respondeu esta conversa há menos de ${MINUTOS_ATIVIDADE_WESLEY} min: ${phone}`);
+      return true;
+    }
+    if (houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY)) {
+      console.log(`[ausencia] suprimido — Wesley está atendendo agora (respondeu alguém há menos de ${MINUTOS_ATIVIDADE_WESLEY} min): ${phone}`);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('[ausencia] erro ao verificar atividade do Wesley:', err);
+    return false;
+  }
+}
+
 function isWithinBusinessHours(): boolean {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
   const day = now.getDay();
