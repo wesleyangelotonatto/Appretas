@@ -66,6 +66,13 @@ export async function sendMessage(
     return;
   }
   const corpo = opts.assinar === false ? text : assinarComoIara(text);
+  // Segunda barreira contra duplicidade: a Iara nunca repete a mesma mensagem
+  // para o mesmo contato em poucos minutos — se isso acontece é defeito, não
+  // intenção. Não vale para envios do Wesley, que pode repetir o que quiser.
+  if (opts.assinar !== false && isEcoDeEnvioProprio(phone, corpo)) {
+    console.log(`[send] DUPLICADA descartada — mesma mensagem já enviada há pouco para ${phone}`);
+    return;
+  }
   registrarEnvioProprio(phone, corpo);
   try {
     await axios.post(`${API_URL()}/api/enviar-texto/${TOKEN()}`, {

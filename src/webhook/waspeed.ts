@@ -53,6 +53,18 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const det = payload.eventDetails || {};
     const last = payload.lastMessage || {};
 
+    // O Waspeed entrega o mesmo evento mais de uma vez. Sem esta trava, cada
+    // entrega repetida virava um atendimento novo e o cliente recebia a mesma
+    // resposta duas vezes. Descarta tudo que já tenha sido processado antes.
+    const eventId: string = det.id?._serialized || det.id?.id || '';
+    if (eventId) {
+      const { registrarEventoNovo } = await import('../memory/db');
+      if (!registrarEventoNovo(eventId)) {
+        console.log('[webhook] ignorado — evento repetido pelo Waspeed:', eventId);
+        return;
+      }
+    }
+
     const from: string = payload.number || det.from || '';
     // Em mídia, o Waspeed coloca o arquivo inteiro em base64 no campo body. Sem esse
     // filtro o blob era gravado no histórico como se fosse o texto da mensagem: inchava

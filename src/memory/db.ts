@@ -91,6 +91,14 @@ export async function initDb(): Promise<void> {
       updated_at INTEGER DEFAULT (unixepoch())
     );
 
+    -- Identificadores das mensagens já processadas. O Waspeed entrega o mesmo
+    -- evento mais de uma vez (observado 2x e até 4x, com microssegundos de
+    -- diferença), o que fazia o cliente receber a mesma resposta repetida.
+    CREATE TABLE IF NOT EXISTS eventos_processados (
+      event_id TEXT PRIMARY KEY,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
     CREATE TABLE IF NOT EXISTS corrections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -208,6 +216,22 @@ export function getRecentCorrections(limit = 20): Array<{ original: string; corr
 
 export function getAusenciaNotice(phone: string): { phone: string; sent_date: string | null; pending: number } | undefined {
   return getDb().prepare('SELECT * FROM ausencia_notices WHERE phone = ?').get(phone) as any;
+}
+
+// Marca um evento do WhatsApp como processado. Retorna true apenas na PRIMEIRA
+// vez — as entregas repetidas do mesmo evento devolvem false e são descartadas.
+// A checagem e a gravação são uma instrução só, então entregas simultâneas não
+// conseguem passar as duas.
+export function registrarEventoNovo(eventId: string): boolean {
+  const r = getDb().prepare('INSERT OR IGNORE INTO eventos_processados (event_id) VALUES (?)').run(eventId);
+  return r.changes > 0;
+}
+
+// Mantém a tabela pequena: identificadores com mais de 2 dias não servem mais,
+// já que as entregas repetidas chegam em milissegundos
+export function limparEventosAntigos() {
+  const limite = Math.floor(Date.now() / 1000) - 2 * 86400;
+  getDb().prepare('DELETE FROM eventos_processados WHERE created_at < ?').run(limite);
 }
 
 // Wesley respondeu alguém há pouco? Se ele está atendendo agora, dizer ao cliente

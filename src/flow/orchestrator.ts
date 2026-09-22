@@ -178,6 +178,18 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     saveMessage(phone, 'client', textBody, mediaUrl);
     io?.emit('message', { phone, role: 'client', body: textBody, mediaUrl, timestamp: Date.now() });
 
+    // 5b. Wesley já está conversando com este cliente: vale como assumir a conversa,
+    // mesmo sem clicar em "Assumir" no painel. Sem isso, a cada mensagem do cliente a
+    // Iara gerava rascunho e enfileirava sugestão enquanto ele mesmo respondia —
+    // poluindo o painel com propostas que ele nunca vai usar (e gastando chamada de IA).
+    // A mensagem do cliente continua sendo salva e exibida normalmente, acima.
+    // Passados MINUTOS_ATIVIDADE_WESLEY sem fala dele, a Iara volta a sugerir.
+    if (houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
+      console.log(`[orchestrator] Wesley está atendendo ${phone} — nenhum rascunho gerado`);
+      io?.emit('session_update', { phone, status: 'atendimento_wesley' });
+      return;
+    }
+
     // 5a. Detecta gênero — pelo texto da mensagem e pelo nome já salvo na sessão
     const genero: Genero = detectarGenero(textBody, session?.name);
 
