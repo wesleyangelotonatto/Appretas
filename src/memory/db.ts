@@ -204,6 +204,11 @@ export function deletePendingApproval(id: number) {
   getDb().prepare('DELETE FROM pending_approvals WHERE id = ?').run(id);
 }
 
+// Descarta a fila inteira de uma vez. Retorna quantos rascunhos foram removidos.
+export function deleteAllPendingApprovals(): number {
+  return getDb().prepare('DELETE FROM pending_approvals').run().changes;
+}
+
 export function saveCorrection(phone: string, original: string, corrected: string, context?: string) {
   getDb().prepare('INSERT INTO corrections (phone, original, corrected, context) VALUES (?, ?, ?, ?)')
     .run(phone, original, corrected, context || null);

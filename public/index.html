@@ -197,7 +197,10 @@
     <div class="approvals-section" id="approvals-section">
       <h4 style="display:flex;align-items:center;justify-content:space-between;">
         Aguardando aprovacao antes de enviar
-        <button onclick="verTodosRascunhos()" style="font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer;">Ver todos</button>
+        <span style="display:flex;gap:6px;">
+          <button onclick="verTodosRascunhos()" style="font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer;">Ver todos</button>
+          <button onclick="descartarTodosRascunhos()" style="font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--red);color:var(--red);border-radius:4px;cursor:pointer;">Descartar todos</button>
+        </span>
       </h4>
       <div id="approvals-list"></div>
     </div>
@@ -349,6 +352,7 @@
 
   socket.on('pending_approval', (data) => { pendingApprovals.push(data); renderApprovals(); });
   socket.on('approval_sent', (data) => { pendingApprovals = pendingApprovals.filter(a => a.id !== data.id); renderApprovals(); });
+  socket.on('approvals_cleared', () => { pendingApprovals = []; renderApprovals(); });
   socket.on('alert', addAlert);
   socket.on('urgent_alert', (data) => addAlert({ ...data, priority: 'high', type: 'URGÊNCIA' }));
   socket.on('new_group', (data) => addAlert({ message: data.message, priority: 'medium', type: 'GRUPO' }));
@@ -378,7 +382,7 @@
   }
 
   function statusLabel(s) {
-    return {ativo:'IA respondendo',takeover:'Takeover ativo',pausado:'Pausado',encerrado:'Encerrado'}[s]||s;
+    return {ativo:'IA respondendo',takeover:'Takeover ativo',atendimento_wesley:'Você está atendendo',pausado:'Pausado',encerrado:'Encerrado'}[s]||s;
   }
 
   function selectConv(phone) {
@@ -418,6 +422,14 @@
   }
 
   let showAllApprovals = false;
+
+  async function descartarTodosRascunhos() {
+    if (!pendingApprovals.length) return;
+    if (!confirm('Descartar os ' + pendingApprovals.length + ' rascunhos pendentes? Nenhuma mensagem foi enviada e esta acao nao pode ser desfeita.')) return;
+    await fetch('/command/pending/descartar-todos', {method:'POST'});
+    pendingApprovals = [];
+    renderApprovals();
+  }
 
   function verTodosRascunhos() {
     showAllApprovals = true;

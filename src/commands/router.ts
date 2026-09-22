@@ -3,7 +3,7 @@ import { parseCommand } from '../responder/claude';
 import { sendMessage, sendFile, sistemaPausado } from '../responder/send';
 import {
   saveMessage, upsertSession, getHistory, scheduleFollowUp,
-  setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval,
+  setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval, deleteAllPendingApprovals,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
   getActiveConversations, getRecentCorrections, getGroups, setGroupActive,
@@ -101,6 +101,18 @@ commandRouter.post('/naorespondidos', async (_req, res) => {
     const { cronNaoRespondidos } = await import('../cron/naorespondidos');
     cronNaoRespondidos().catch(err => console.error('[naorespondidos] erro:', err));
     res.json({ ok: true, message: 'Verificação de conversas sem resposta iniciada' });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+// POST /command/pending/descartar-todos — limpa a fila inteira de rascunhos
+commandRouter.post('/pending/descartar-todos', (req, res) => {
+  try {
+    const removidos = deleteAllPendingApprovals();
+    req.app.locals.io?.emit('approvals_cleared', { removidos });
+    console.log(`[treino] ${removidos} rascunho(s) descartado(s) de uma vez`);
+    res.json({ ok: true, removidos });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }

@@ -4,7 +4,7 @@ import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
 import { draftResponse } from '../responder/claude';
-import { sendMessage, createNote } from '../responder/send';
+import { sendMessage, createNote, sistemaPausado } from '../responder/send';
 import { savePendingApproval } from '../memory/db';
 import { consultarDjen } from '../integrations/djen';
 import { buscarCardTrello, buscarCardPorNomes, criarCardLead } from '../integrations/trello';
@@ -177,6 +177,15 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // 5. SEMPRE salva a mensagem do cliente e emite para o painel
     saveMessage(phone, 'client', textBody, mediaUrl);
     io?.emit('message', { phone, role: 'client', body: textBody, mediaUrl, timestamp: Date.now() });
+
+    // 5c. Secretária pausada pelo painel: não gera rascunho nem sugestão. Antes a
+    // pausa só bloqueava o envio, e a fila de aprovação continuava enchendo com
+    // respostas que nunca seriam usadas. A mensagem do cliente segue sendo salva
+    // e exibida normalmente, acima.
+    if (sistemaPausado()) {
+      console.log(`[orchestrator] secretária pausada — nenhum rascunho gerado para ${phone}`);
+      return;
+    }
 
     // 5b. Wesley já está conversando com este cliente: vale como assumir a conversa,
     // mesmo sem clicar em "Assumir" no painel. Sem isso, a cada mensagem do cliente a
