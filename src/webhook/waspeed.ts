@@ -7,6 +7,31 @@ export const webhookRouter = Router();
 // Número do agendador eletrônico — nunca tratado como cliente (normalizado, ver normalizePhone)
 const AGENDADOR_PHONE = process.env.AGENDADOR_PHONE || '554488596158';
 
+// Tipos que representam uma mensagem escrita/gravada por uma pessoa. Qualquer
+// outro tipo vindo do WhatsApp é aviso de sistema e não deve virar atendimento.
+const TIPOS_DE_MENSAGEM_REAL = new Set([
+  'chat', 'text', 'image', 'video', 'audio', 'ptt',
+  'document', 'sticker', 'location', 'vcard', 'multi_vcard',
+]);
+
+// Processamento serializado por contato: duas mensagens do mesmo cliente chegando
+// juntas (ex.: duas fotos seguidas) rodavam em paralelo e duplicavam avisos e
+// rascunhos. Cada telefone agora tem uma fila própria; contatos diferentes
+// continuam sendo atendidos em paralelo normalmente.
+const filasPorContato = new Map<string, Promise<void>>();
+
+function enfileirarPorContato(phone: string, tarefa: () => Promise<void>): Promise<void> {
+  const anterior = filasPorContato.get(phone) || Promise.resolve();
+  const atual = anterior.then(tarefa, tarefa).catch(err => {
+    console.error('[webhook] erro ao processar mensagem de', phone, err);
+  });
+  filasPorContato.set(phone, atual);
+  atual.finally(() => {
+    if (filasPorContato.get(phone) === atual) filasPorContato.delete(phone);
+  });
+  return atual;
+}
+
 webhookRouter.post('/', async (req: Request, res: Response) => {
   try {
     const payload = req.body;
@@ -30,6 +55,18 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const waName: string = String(payload.name || det.notifyName || '').trim();
 
     if (!from) return;
+
+    // Só processa tipos que são mensagem de verdade. O WhatsApp manda pelo mesmo
+    // eventID vários avisos de sistema — troca de código de segurança
+    // (e2e_notification), entrada/saída de grupo, registro de chamada, mensagem
+    // apagada — e alguns vêm com um identificador interno no campo body (ex.:
+    // "79281371742286@lid"), o que os fazia passar pela checagem de conteúdo e
+    // serem tratados como se o cliente tivesse escrito algo. Lista branca é o
+    // caminho seguro: tipo desconhecido não vira conversa.
+    if (!TIPOS_DE_MENSAGEM_REAL.has(messageType)) {
+      console.log('[webhook] ignorado — evento de sistema, não é mensagem:', messageType, '|', from);
+      return;
+    }
 
     // Ignora Status/Stories do WhatsApp — nunca é uma conversa real com um cliente,
     // mesmo quando tem texto (ex: legenda de um Status de terceiros)
@@ -58,7 +95,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       if (!temConteudoGrupo) return;
 
       console.log('[webhook] mensagem em grupo ATIVADO:', from, '| body:', body.slice(0, 80));
-      await handleIncomingMessage({
+      await enfileirarPorContato(from, () => handleIncomingMessage({
         phone: from,
         body,
         mediaUrl,
@@ -68,7 +105,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
         filename: det.filename || det.caption || undefined,
         mimetype: det.mimetype || det.mimeType || undefined,
         io: req.app.locals.io,
-      });
+      }));
       return;
     }
 
@@ -111,8 +148,12 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     // e detecta agendamentos, mas não processa pelo pipeline de IA
     if (fromMe) {
       const { getSession, saveMessage } = await import('../memory/db');
+      const { isEcoDeEnvioProprio } = await import('../responder/send');
       const session = getSession(phone);
-      if (body?.trim()) {
+      // O WhatsApp devolve como "fromMe" também as mensagens que a própria Iara
+      // enviou. Gravá-las como fala do Wesley duplicaria o histórico e faria o
+      // sistema acreditar que o cliente já foi atendido por uma pessoa.
+      if (body?.trim() && !isEcoDeEnvioProprio(phone, body)) {
         saveMessage(phone, 'wesley', body);
         req.app.locals.io?.emit('message', { phone, role: 'wesley', body, timestamp: Date.now() });
       }
@@ -120,7 +161,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    await handleIncomingMessage({
+    await enfileirarPorContato(phone, () => handleIncomingMessage({
       phone,
       body,
       mediaUrl,
@@ -130,7 +171,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       filename,
       mimetype,
       io: req.app.locals.io,
-    });
+    }));
   } catch (err) {
     console.error('[webhook] erro:', err);
   }

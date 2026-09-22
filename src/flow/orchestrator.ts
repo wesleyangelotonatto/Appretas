@@ -1,5 +1,5 @@
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, getAusenciaNotice, marcarAusenciaEnviada, marcarAusenciaPendente } from '../memory/db';
+import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -198,10 +198,18 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       const avisoAusencia = getAusenciaNotice(phone);
       if (avisoAusencia?.sent_date !== hojeStr) {
         if (isWithinAusenciaWindow()) {
-          await sendMessage(phone, MSG_FORA_HORARIO);
-          saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-          io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
-          marcarAusenciaEnviada(phone, hojeStr);
+          // Reivindica ANTES de enviar: se outra mensagem do mesmo contato estiver
+          // sendo processada ao mesmo tempo, só uma delas ganha o direito de enviar
+          if (reivindicarAusencia(phone, hojeStr)) {
+            try {
+              await sendMessage(phone, MSG_FORA_HORARIO);
+              saveMessage(phone, 'iara', MSG_FORA_HORARIO);
+              io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+            } catch (err) {
+              liberarAusencia(phone);
+              throw err;
+            }
+          }
         } else {
           marcarAusenciaPendente(phone);
         }

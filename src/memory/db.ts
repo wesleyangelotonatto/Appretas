@@ -210,6 +210,26 @@ export function getAusenciaNotice(phone: string): { phone: string; sent_date: st
   return getDb().prepare('SELECT * FROM ausencia_notices WHERE phone = ?').get(phone) as any;
 }
 
+// Reivindica o aviso de ausência do dia de forma ATÔMICA: retorna true só para a
+// primeira chamada do dia para esse telefone. Duas mensagens do mesmo contato
+// chegando juntas (ex.: duas fotos no mesmo segundo) passavam as duas pela
+// verificação getAusenciaNotice() antes de qualquer uma gravar — o cliente recebia
+// o aviso duplicado. Aqui a checagem e a gravação acontecem numa única instrução.
+export function reivindicarAusencia(phone: string, dataHoje: string): boolean {
+  const r = getDb().prepare(`
+    INSERT INTO ausencia_notices (phone, sent_date, pending) VALUES (?, ?, 0)
+    ON CONFLICT(phone) DO UPDATE SET sent_date = excluded.sent_date, pending = 0
+      WHERE ausencia_notices.sent_date IS NOT excluded.sent_date
+  `).run(phone, dataHoje);
+  return r.changes > 0;
+}
+
+// Devolve a reivindicação quando o envio falha, para que uma próxima mensagem
+// do contato possa tentar de novo em vez de ficar o dia todo sem aviso
+export function liberarAusencia(phone: string) {
+  getDb().prepare('UPDATE ausencia_notices SET sent_date = NULL WHERE phone = ?').run(phone);
+}
+
 export function marcarAusenciaEnviada(phone: string, dataHoje: string) {
   getDb().prepare(`
     INSERT INTO ausencia_notices (phone, sent_date, pending) VALUES (?, ?, 0)

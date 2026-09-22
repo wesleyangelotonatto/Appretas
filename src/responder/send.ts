@@ -14,11 +14,42 @@ export function sistemaPausado(): boolean {
   return process.env.SISTEMA_PAUSADO === 'true';
 }
 
+// Toda mensagem que o sistema envia volta pelo webhook como evento "fromMe".
+// Sem esse registro, o eco da própria fala da Iara seria gravado de novo no
+// histórico como se fosse uma resposta digitada pelo Wesley. Guarda por 5 min.
+const enviadasRecentemente = new Map<string, number>();
+const ECO_TTL_MS = 5 * 60 * 1000;
+
+function chaveEco(phone: string, text: string): string {
+  return `${phone.replace(/[^0-9]/g, '').slice(-10)}|${text.trim().slice(0, 120)}`;
+}
+
+export function registrarEnvioProprio(phone: string, text: string) {
+  const agora = Date.now();
+  for (const [k, t] of enviadasRecentemente) {
+    if (agora - t > ECO_TTL_MS) enviadasRecentemente.delete(k);
+  }
+  enviadasRecentemente.set(chaveEco(phone, text), agora);
+}
+
+// true se esse texto foi enviado pelo próprio sistema há pouco (é eco, não fala nova)
+export function isEcoDeEnvioProprio(phone: string, text: string): boolean {
+  const k = chaveEco(phone, text);
+  const t = enviadasRecentemente.get(k);
+  if (t === undefined) return false;
+  if (Date.now() - t > ECO_TTL_MS) {
+    enviadasRecentemente.delete(k);
+    return false;
+  }
+  return true;
+}
+
 export async function sendMessage(phone: string, text: string): Promise<void> {
   if (sistemaPausado()) {
     console.log(`[send] BLOQUEADO (sistema pausado) — mensagem NÃO enviada para ${phone}`);
     return;
   }
+  registrarEnvioProprio(phone, text);
   try {
     await axios.post(`${API_URL()}/api/enviar-texto/${TOKEN()}`, {
       phone,
