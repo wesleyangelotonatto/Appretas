@@ -58,7 +58,17 @@ const TZ = process.env.TZ_APP || 'America/Sao_Paulo';
 cron.schedule('0 8 * * 1-5', () => cronAudiencias(), { timezone: TZ });   // seg-sex 08h (audiências + prazos)
 cron.schedule('0 8 * * 1-5', () => cronPrazos(), { timezone: TZ });        // seg-sex 08h
 cron.schedule('0 * * * *', () => cronFollowUps(), { timezone: TZ });       // a cada hora
-cron.schedule('0 * * * *', () => cronNaoRespondidos(), { timezone: TZ });  // a cada hora — avisos de não-esquecemos
+// Avisos de "não esquecemos": DESLIGADO. Disparou três vezes para clientes que não
+// aguardavam resposta. Decidir automaticamente quem está esperando retorno se mostrou
+// pouco confiável para uma mensagem que vai direto ao cliente sem revisão. Continua
+// disponível sob demanda pelo painel (POST /command/naorespondidos); para voltar a
+// rodar sozinho, defina AVISOS_NAO_RESPONDIDOS=true.
+if (process.env.AVISOS_NAO_RESPONDIDOS === 'true') {
+  cron.schedule('0 * * * *', () => cronNaoRespondidos(), { timezone: TZ });
+  console.log('[iara] avisos de não-respondidos: ATIVADOS (envio automático a cada hora)');
+} else {
+  console.log('[iara] avisos de não-respondidos: DESLIGADOS (nenhum envio automático)');
+}
 cron.schedule('0 22 * * *', () => cronResumosDiarios(), { timezone: TZ }); // todo dia às 22h — resumos + Drive + nota Waspeed
 cron.schedule('0 7 * * *', () => cronAusenciaPendentes(), { timezone: TZ }); // todo dia às 07h — entrega avisos de ausência pendentes
 

@@ -93,6 +93,19 @@ commandRouter.post('/resumos', async (_req, res) => {
   }
 });
 
+// POST /command/naorespondidos — dispara sob demanda os avisos de "não esquecemos".
+// O envio automático está desligado; este endpoint existe para usar a função
+// deliberadamente, quando Wesley quiser, em vez de ela rodar sozinha toda hora.
+commandRouter.post('/naorespondidos', async (_req, res) => {
+  try {
+    const { cronNaoRespondidos } = await import('../cron/naorespondidos');
+    cronNaoRespondidos().catch(err => console.error('[naorespondidos] erro:', err));
+    res.json({ ok: true, message: 'Verificação de conversas sem resposta iniciada' });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // GET /command/pending — lista aprovações pendentes (modo treino)
 commandRouter.get('/pending', (_req, res) => {
   res.json(getPendingApprovals());

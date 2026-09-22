@@ -14,6 +14,13 @@ const TIPOS_DE_MENSAGEM_REAL = new Set([
   'document', 'sticker', 'location', 'vcard', 'multi_vcard',
 ]);
 
+// Uma legenda de foto é curta; um texto longo formado só por caracteres de base64
+// é o arquivo, não algo que alguém digitou.
+function descartarConteudoBinario(texto: string): string {
+  if (texto.length > 300 && /^[A-Za-z0-9+/=\s]+$/.test(texto)) return '';
+  return texto;
+}
+
 // Processamento serializado por contato: duas mensagens do mesmo cliente chegando
 // juntas (ex.: duas fotos seguidas) rodavam em paralelo e duplicavam avisos e
 // rascunhos. Cada telefone agora tem uma fila própria; contatos diferentes
@@ -47,7 +54,11 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const last = payload.lastMessage || {};
 
     const from: string = payload.number || det.from || '';
-    const body: string = last.text || det.body || '';
+    // Em mídia, o Waspeed coloca o arquivo inteiro em base64 no campo body. Sem esse
+    // filtro o blob era gravado no histórico como se fosse o texto da mensagem: inchava
+    // o banco, aparecia no painel e estourava o limite de tokens das chamadas de IA
+    // ("prompt is too long: 258530 tokens"), derrubando resumos e verificações.
+    const body: string = descartarConteudoBinario(last.text || det.body || '');
     const mediaUrl: string | undefined = det.mediaUrl || det.url || undefined;
     const messageType: string = det.type || last.type || 'chat';
     const fromMe: boolean = !!(det.id?.fromMe || det.fromMe);

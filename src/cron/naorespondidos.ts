@@ -26,7 +26,7 @@ const ENCERRAMENTOS_OBVIOS = [
 // um aviso a menos é preferível a incomodar um cliente que não está esperando nada
 // (foi exatamente o erro relatado — o padrão antigo assumia o oposto).
 async function precisaDeAviso(phone: string, ultimaMsgCliente: string): Promise<boolean> {
-  const texto = (ultimaMsgCliente || '').trim();
+  const texto = (ultimaMsgCliente || '').trim().slice(0, 1000);
   if (!texto) return false; // mídia sem legenda → aguarda análise, mas isso é raro nesse fluxo
   if (ENCERRAMENTOS_OBVIOS.some(re => re.test(texto))) return false;
 
@@ -35,8 +35,10 @@ async function precisaDeAviso(phone: string, ultimaMsgCliente: string): Promise<
     const historico = db.prepare(
       `SELECT role, body FROM messages WHERE phone = ? ORDER BY created_at DESC LIMIT 6`
     ).all(phone) as Array<{ role: string; body: string }>;
+    // Trunca cada mensagem: uma única mensagem gigante no histórico já estourou o
+    // limite do modelo ("prompt is too long: 258530 tokens") e derrubou a verificação
     const historicoFormatado = historico.reverse()
-      .map(m => `${m.role === 'client' ? 'Cliente' : 'Escritório'}: ${m.body}`)
+      .map(m => `${m.role === 'client' ? 'Cliente' : 'Escritório'}: ${(m.body || '').slice(0, 500)}`)
       .join('\n');
 
     const prompt = `Você avalia se uma conversa de WhatsApp de um escritório de advocacia está genuinamente aguardando resposta do escritório, ou se o cliente não está esperando nada (despedida, agradecimento isolado, confirmação sem pergunta, assunto encerrado, mensagem apenas informativa, etc.).
@@ -110,15 +112,23 @@ export function getConversasSemResposta(): Array<{ phone: string; name: string |
       FROM messages
       GROUP BY phone
     ),
+    -- created_at tem precisão de segundos: duas mensagens do cliente no mesmo
+    -- segundo empatavam no MAX e o JOIN devolvia DUAS linhas para o mesmo
+    -- telefone, fazendo o contato receber o aviso duplicado. O MAX(rowid)
+    -- desempata e garante exatamente uma linha por telefone.
     ultima_msg_cliente AS (
       SELECT m.phone, m.body AS ultima_msg_body
       FROM messages m
       INNER JOIN (
-        SELECT phone, MAX(created_at) AS ts
+        SELECT phone, MAX(rowid) AS rid
         FROM messages
         WHERE role = 'client'
+          AND created_at = (
+            SELECT MAX(created_at) FROM messages m2
+            WHERE m2.phone = messages.phone AND m2.role = 'client'
+          )
         GROUP BY phone
-      ) t ON t.phone = m.phone AND t.ts = m.created_at AND m.role = 'client'
+      ) t ON t.rid = m.rowid
     ),
     aviso_recente AS (
       SELECT DISTINCT phone FROM messages
