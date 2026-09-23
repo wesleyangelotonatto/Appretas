@@ -91,6 +91,21 @@ export async function initDb(): Promise<void> {
       updated_at INTEGER DEFAULT (unixepoch())
     );
 
+    -- Banco apartado de calibração. Enquanto o modo calibragem está ligado, NADA
+    -- sai para o cliente: toda resposta que teria sido enviada é registrada aqui,
+    -- junto do que a IA redigiu e do que Wesley deixou depois de editar. Serve só
+    -- para acertar o tom e o conteúdo do atendimento; não é histórico de conversa.
+    CREATE TABLE IF NOT EXISTS treinamento (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT,
+      tipo TEXT,              -- 'rascunho' (resposta da IA revisada) | 'automatica' (aviso do sistema)
+      contexto TEXT,          -- o que o cliente disse / contexto da resposta
+      texto_original TEXT,    -- o que a IA redigiu
+      texto_final TEXT,       -- o que ficou depois da edição de Wesley
+      editado INTEGER DEFAULT 0,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
     -- Identificadores das mensagens já processadas. O Waspeed entrega o mesmo
     -- evento mais de uma vez (observado 2x e até 4x, com microssegundos de
     -- diferença), o que fazia o cliente receber a mesma resposta repetida.
@@ -221,6 +236,43 @@ export function getRecentCorrections(limit = 20): Array<{ original: string; corr
 
 export function getAusenciaNotice(phone: string): { phone: string; sent_date: string | null; pending: number } | undefined {
   return getDb().prepare('SELECT * FROM ausencia_notices WHERE phone = ?').get(phone) as any;
+}
+
+// ─── Banco de calibração (modo treinamento sem envio) ──────────────────────────
+
+export function salvarTreinamento(dados: {
+  phone: string;
+  tipo: 'rascunho' | 'automatica';
+  contexto?: string | null;
+  textoOriginal: string;
+  textoFinal: string;
+}): number {
+  const r = getDb().prepare(`
+    INSERT INTO treinamento (phone, tipo, contexto, texto_original, texto_final, editado)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    dados.phone,
+    dados.tipo,
+    dados.contexto ?? null,
+    dados.textoOriginal,
+    dados.textoFinal,
+    dados.textoOriginal !== dados.textoFinal ? 1 : 0
+  );
+  return Number(r.lastInsertRowid);
+}
+
+export function listarTreinamento(limit = 200): any[] {
+  return getDb().prepare('SELECT * FROM treinamento ORDER BY created_at DESC, id DESC LIMIT ?').all(limit) as any[];
+}
+
+export function contarTreinamento(): { total: number; editados: number } {
+  return getDb().prepare(
+    'SELECT COUNT(*) AS total, COALESCE(SUM(editado), 0) AS editados FROM treinamento'
+  ).get() as any;
+}
+
+export function limparTreinamento(): number {
+  return getDb().prepare('DELETE FROM treinamento').run().changes;
 }
 
 // Marca um evento do WhatsApp como processado. Retorna true apenas na PRIMEIRA

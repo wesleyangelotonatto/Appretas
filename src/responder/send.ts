@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { getSetting } from '../memory/db';
+import { getSetting, salvarTreinamento } from '../memory/db';
 
 const API_URL = () => process.env.WASPEED_API_URL || 'https://api-whatsapp.wascript.com.br';
 const TOKEN = () => process.env.WASPEED_TOKEN || '';
@@ -56,6 +56,31 @@ function assinarComoIara(text: string): string {
 // assinar=false para mensagens que NÃO são da Iara: envio direto do Wesley pelo
 // painel e avisos internos ao agendador. O padrão é assinar, de modo que qualquer
 // novo ponto de envio da Iara já saia identificado sem precisar lembrar disso.
+// Modo calibragem: o sistema recebe, interpreta e redige normalmente, mas NENHUMA
+// mensagem chega ao cliente — tudo que sairia é registrado no banco de treinamento.
+// Resumos diários, notas e salvamento de arquivos no Drive seguem funcionando, pois
+// não são mensagens ao cliente. Controlado pelo painel (setting 'modo_calibragem');
+// a variável MODO_CALIBRAGEM só define o valor inicial antes do 1º toggle.
+export function modoCalibragem(): boolean {
+  const setting = getSetting('modo_calibragem');
+  if (setting !== null) return setting === '1';
+  return process.env.MODO_CALIBRAGEM === 'true';
+}
+
+// Registra no banco de calibração o que teria sido enviado e devolve true para
+// interromper o envio. Ponto único: cobre aviso de ausência, urgência, follow-ups,
+// prazos, audiências e qualquer ponto de envio futuro, sem depender de lembrar deles.
+function interceptadoParaCalibragem(phone: string, texto: string, rotulo: string): boolean {
+  if (!modoCalibragem()) return false;
+  try {
+    salvarTreinamento({ phone, tipo: 'automatica', contexto: rotulo, textoOriginal: texto, textoFinal: texto });
+  } catch (err) {
+    console.error('[calibragem] falha ao registrar no banco de treinamento:', err);
+  }
+  console.log(`[calibragem] ${rotulo} NÃO enviado para ${phone} — registrado para calibração`);
+  return true;
+}
+
 export async function sendMessage(
   phone: string,
   text: string,
@@ -65,6 +90,7 @@ export async function sendMessage(
     console.log(`[send] BLOQUEADO (sistema pausado) — mensagem NÃO enviada para ${phone}`);
     return;
   }
+  if (interceptadoParaCalibragem(phone, opts.assinar === false ? text : assinarComoIara(text), 'mensagem')) return;
   const corpo = opts.assinar === false ? text : assinarComoIara(text);
   // Segunda barreira contra duplicidade: a Iara nunca repete a mesma mensagem
   // para o mesmo contato em poucos minutos — se isso acontece é defeito, não
@@ -90,6 +116,7 @@ export async function sendAudio(phone: string, audioUrl: string): Promise<void> 
     console.log(`[send] BLOQUEADO (sistema pausado) — áudio NÃO enviado para ${phone}`);
     return;
   }
+  if (interceptadoParaCalibragem(phone, `[áudio] ${audioUrl}`, 'áudio')) return;
   try {
     await axios.post(`${API_URL()}/api/enviar-audio/${TOKEN()}`, {
       phone,
@@ -105,6 +132,7 @@ export async function sendFile(phone: string, fileUrl: string, caption?: string)
     console.log(`[send] BLOQUEADO (sistema pausado) — arquivo NÃO enviado para ${phone}`);
     return;
   }
+  if (interceptadoParaCalibragem(phone, `[arquivo] ${fileUrl}${caption ? ' — ' + caption : ''}`, 'arquivo')) return;
   try {
     await axios.post(`${API_URL()}/api/enviar-arquivo/${TOKEN()}`, {
       phone,

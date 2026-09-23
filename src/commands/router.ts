@@ -1,12 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { parseCommand } from '../responder/claude';
-import { sendMessage, sendFile, sistemaPausado } from '../responder/send';
+import { sendMessage, sendFile, sistemaPausado, modoCalibragem } from '../responder/send';
 import {
   saveMessage, upsertSession, getHistory, scheduleFollowUp,
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval, deleteAllPendingApprovals,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
   getActiveConversations, getRecentCorrections, getGroups, setGroupActive,
+  salvarTreinamento, listarTreinamento, contarTreinamento,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -66,6 +67,24 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
     if (original && original.draft !== draft) {
       saveCorrection(phone, original.draft, draft, original.context);
       console.log(`[correction] salva para ${phone} — original: "${original.draft.slice(0, 60)}..." → editado: "${draft.slice(0, 60)}..."`);
+    }
+
+    // Em calibragem, aprovar NÃO envia: guarda no banco de treinamento o que a IA
+    // redigiu e o que ficou depois da sua edição. Nada chega ao cliente, e o
+    // histórico real da conversa não recebe uma resposta que nunca existiu.
+    if (modoCalibragem()) {
+      salvarTreinamento({
+        phone,
+        tipo: 'rascunho',
+        contexto: original?.context || null,
+        textoOriginal: original?.draft || draft,
+        textoFinal: draft,
+      });
+      deletePendingApproval(id);
+      req.app.locals.io?.emit('approval_sent', { id, phone, draft, calibragem: true });
+      req.app.locals.io?.emit('command_log', { command: `[Calibragem] ${phone}`, response: 'Resposta guardada para treinamento — nada foi enviado', ok: true, timestamp: Date.now() });
+      console.log(`[calibragem] resposta de ${phone} guardada para treinamento — NÃO enviada`);
+      return res.json({ ok: true, calibragem: true });
     }
 
     await sendMessage(phone, draft);
@@ -154,6 +173,11 @@ commandRouter.post('/send', async (req, res) => {
   const { phone, message } = req.body;
   try {
     await sendMessage(phone, message, { assinar: false });
+    // Em calibragem a mensagem não saiu (ficou registrada no banco de treinamento),
+    // então não entra no histórico real como se o cliente a tivesse recebido
+    if (modoCalibragem()) {
+      return res.json({ ok: true, calibragem: true, aviso: 'Modo calibragem: nada foi enviado ao cliente' });
+    }
     saveMessage(phone, 'wesley', message);
     req.app.locals.io?.emit('message', { phone, role: 'wesley', body: message, timestamp: Date.now() });
     res.json({ ok: true });
@@ -246,6 +270,47 @@ commandRouter.delete('/ausencia', (req: Request, res: Response) => {
   req.app.locals.io?.emit('ausencia_update', { ativo: false });
   console.log('[ausencia] modo ausência DESATIVADO');
   res.json({ ok: true });
+});
+
+// ─── Modo calibragem: treinar sem que nada chegue ao cliente ───────────────────
+// Recebe, interpreta e redige normalmente; toda resposta vai para o banco de
+// treinamento em vez do WhatsApp. Resumos, notas e Drive seguem funcionando.
+
+commandRouter.get('/calibragem', (_req, res) => {
+  res.json({ ativo: modoCalibragem(), ...contarTreinamento() });
+});
+
+commandRouter.post('/calibragem/ativar', (req: Request, res: Response) => {
+  setSetting('modo_calibragem', '1');
+  req.app.locals.io?.emit('calibragem_update', { ativo: true });
+  console.log('[calibragem] LIGADA — nenhuma mensagem será enviada a clientes');
+  res.json({ ok: true, ativo: true });
+});
+
+commandRouter.post('/calibragem/desativar', (req: Request, res: Response) => {
+  setSetting('modo_calibragem', '0');
+  req.app.locals.io?.emit('calibragem_update', { ativo: false });
+  console.log('[calibragem] DESLIGADA — envios normais retomados');
+  res.json({ ok: true, ativo: false });
+});
+
+// GET /command/treinamento — registros de calibração (também em CSV, ?formato=csv)
+commandRouter.get('/treinamento', (req: Request, res: Response) => {
+  const registros = listarTreinamento(parseInt(String(req.query.limit || '')) || 200);
+  if (req.query.formato === 'csv') {
+    const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const linhas = [
+      'data,telefone,tipo,editado,contexto,texto_original,texto_final',
+      ...registros.map(r => [
+        new Date(r.created_at * 1000).toLocaleString('pt-BR', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }),
+        r.phone, r.tipo, r.editado ? 'sim' : 'nao', r.contexto, r.texto_original, r.texto_final,
+      ].map(esc).join(',')),
+    ];
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="calibragem-iara.csv"');
+    return res.send('﻿' + linhas.join('\n'));
+  }
+  res.json({ ...contarTreinamento(), registros });
 });
 
 // ─── Ativar/Desativar a secretária (Iara) ──────────────────────────────────────

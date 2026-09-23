@@ -133,6 +133,7 @@
   <button id="btn-secretaria" onclick="toggleSecretaria()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--green);background:#0a2d10;color:var(--green);cursor:pointer;">Secretária: Ativa</button>
   <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
   <button id="btn-groups" onclick="toggleGroupsModal()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #3498db;background:#0a1a2d;color:#3498db;cursor:pointer;">Grupos</button>
+  <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Calibragem: desligada</button>
   <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
   <div class="integration-status">
     <div class="int-item"><div class="int-dot ok" id="dot-waspeed"></div> Waspeed</div>
@@ -141,6 +142,10 @@
     <div class="int-item"><div class="int-dot ok" id="dot-drive"></div> Drive</div>
   </div>
 </header>
+<div id="faixa-calibragem" style="display:none;background:#2d1a0a;border-bottom:1px solid var(--orange);color:var(--orange);padding:8px 16px;font-size:12px;text-align:center;">
+  <strong>MODO CALIBRAGEM ATIVO</strong> — nenhuma mensagem está sendo enviada a clientes. Tudo que você revisar fica guardado só para treinamento.
+  <a href="/command/treinamento?formato=csv" style="color:var(--orange);margin-left:10px;">baixar registros (CSV)</a>
+</div>
 
 <!-- Modal Ausência -->
 <div class="modal-overlay" id="modal-ausencia">
@@ -770,6 +775,50 @@
   });
 
   checkSecretaria();
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ─── Modo calibragem: treinar sem enviar nada ao cliente ─────────────────
+  let calibragemAtiva = false;
+
+  async function checkCalibragem() {
+    try {
+      const d = await (await fetch('/command/calibragem')).json();
+      calibragemAtiva = d.ativo;
+      updateCalibragemBtn(d.total);
+    } catch(e) {}
+  }
+
+  function updateCalibragemBtn(total) {
+    const btn = document.getElementById('btn-calibragem');
+    const faixa = document.getElementById('faixa-calibragem');
+    if (calibragemAtiva) {
+      btn.style.background = '#2d1a0a'; btn.style.borderColor = 'var(--orange)'; btn.style.color = 'var(--orange)';
+      btn.textContent = 'CALIBRAGEM' + (total ? ' (' + total + ')' : '');
+      faixa.style.display = 'block';
+    } else {
+      btn.style.background = 'var(--surface2)'; btn.style.borderColor = 'var(--border)'; btn.style.color = 'var(--text-muted)';
+      btn.textContent = 'Calibragem: desligada';
+      faixa.style.display = 'none';
+    }
+  }
+
+  async function toggleCalibragem() {
+    if (calibragemAtiva) {
+      if (!confirm('Desligar a calibragem? A partir daí as mensagens voltam a ser enviadas aos clientes de verdade.')) return;
+      await fetch('/command/calibragem/desativar', {method:'POST'});
+      calibragemAtiva = false;
+    } else {
+      if (!confirm('Ligar o modo calibragem?\n\nNenhuma mensagem chegara a qualquer cliente. As respostas que voce revisar ficam guardadas em um banco separado, so para treinamento.\n\nResumos diarios, notas e salvamento no Drive continuam funcionando.')) return;
+      await fetch('/command/calibragem/ativar', {method:'POST'});
+      calibragemAtiva = true;
+    }
+    checkCalibragem();
+  }
+
+  socket.on('calibragem_update', (data) => { calibragemAtiva = data.ativo; checkCalibragem(); });
+
+  checkCalibragem();
+  setInterval(checkCalibragem, 60000);
   // ─────────────────────────────────────────────────────────────────────────
 
   // ─── Grupos ──────────────────────────────────────────────────────────────

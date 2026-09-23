@@ -4,7 +4,7 @@ import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
 import { draftResponse } from '../responder/claude';
-import { sendMessage, createNote, sistemaPausado } from '../responder/send';
+import { sendMessage, createNote, sistemaPausado, modoCalibragem } from '../responder/send';
 import { savePendingApproval } from '../memory/db';
 import { consultarDjen } from '../integrations/djen';
 import { buscarCardTrello, buscarCardPorNomes, criarCardLead } from '../integrations/trello';
@@ -452,7 +452,9 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 }
 
 async function deliverOrQueue(phone: string, draft: string, context: string, io: any, contactName?: string) {
-  const modoTreino = process.env.MODO_TREINO === 'true';
+  // Em calibragem a resposta nunca é enviada: vai sempre para a fila de revisão,
+  // onde Wesley edita e o resultado é gravado no banco de treinamento
+  const modoTreino = process.env.MODO_TREINO === 'true' || modoCalibragem();
 
   if (modoTreino) {
     const id = savePendingApproval(phone, draft, context);
