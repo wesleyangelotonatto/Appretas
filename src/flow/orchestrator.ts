@@ -178,11 +178,17 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     saveMessage(phone, 'client', textBody, mediaUrl);
     io?.emit('message', { phone, role: 'client', body: textBody, mediaUrl, timestamp: Date.now() });
 
+    // Em calibragem, as duas travas abaixo não valem: nelas o motivo para não
+    // redigir é "seria uma resposta desperdiçada". Em calibragem a resposta É o
+    // produto — é ela que se quer ver e corrigir — e não há risco, porque nenhum
+    // envio sai (a trava do envio é outra, em responder/send.ts).
+    const calibrando = modoCalibragem();
+
     // 5c. Secretária pausada pelo painel: não gera rascunho nem sugestão. Antes a
     // pausa só bloqueava o envio, e a fila de aprovação continuava enchendo com
     // respostas que nunca seriam usadas. A mensagem do cliente segue sendo salva
     // e exibida normalmente, acima.
-    if (sistemaPausado()) {
+    if (sistemaPausado() && !calibrando) {
       console.log(`[orchestrator] secretária pausada — nenhum rascunho gerado para ${phone}`);
       return;
     }
@@ -193,7 +199,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // poluindo o painel com propostas que ele nunca vai usar (e gastando chamada de IA).
     // A mensagem do cliente continua sendo salva e exibida normalmente, acima.
     // Passados MINUTOS_ATIVIDADE_WESLEY sem fala dele, a Iara volta a sugerir.
-    if (houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
+    if (!calibrando && houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
       console.log(`[orchestrator] Wesley está atendendo ${phone} — nenhum rascunho gerado`);
       io?.emit('session_update', { phone, status: 'atendimento_wesley' });
       return;
