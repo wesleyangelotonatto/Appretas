@@ -45,7 +45,10 @@ Redija a resposta da Iara considerando tudo que já foi dito na conversa. Máxim
   const corrections = getRecentCorrections(20);
   const correctionsSection = corrections.length > 0
     ? `\n\nCORREÇÕES ANTERIORES (aprenda com estas edições de Wesley — prefira o estilo corrigido):\n` +
-      corrections.map((c, i) => `${i + 1}. Original: "${c.original.slice(0, 120)}"\n   Corrigido: "${c.corrected.slice(0, 120)}"`).join('\n')
+      // 120 caracteres cortavam a correção justamente onde ela começava: as
+      // respostas têm ~200 e a diferença costuma estar depois da saudação, então
+      // o modelo recebia duas frases quase idênticas e não via o que mudou
+      corrections.map((c, i) => `${i + 1}. Original: "${c.original.slice(0, 700)}"\n   Corrigido: "${c.corrected.slice(0, 700)}"`).join('\n')
     : '';
 
   const response = await client.messages.create({

@@ -229,9 +229,17 @@ export function saveCorrection(phone: string, original: string, corrected: strin
     .run(phone, original, corrected, context || null);
 }
 
+// Correções distintas, da mais recente para a mais antiga. Agrupa pares iguais:
+// a mesma correção feita várias vezes é uma lição só, e sem isso ela ocupava
+// várias vagas da janela, deixando de fora lições diferentes.
 export function getRecentCorrections(limit = 20): Array<{ original: string; corrected: string }> {
-  return getDb().prepare('SELECT original, corrected FROM corrections ORDER BY created_at DESC LIMIT ?')
-    .all(limit) as any[];
+  return getDb().prepare(`
+    SELECT original, corrected, MAX(created_at) AS ts
+    FROM corrections
+    GROUP BY original, corrected
+    ORDER BY ts DESC
+    LIMIT ?
+  `).all(limit) as any[];
 }
 
 export function getAusenciaNotice(phone: string): { phone: string; sent_date: string | null; pending: number } | undefined {
