@@ -111,6 +111,31 @@ export async function criarCardLead(data: LeadData): Promise<string> {
   }
 }
 
+// Telefone do cliente na descrição do card. A versão anterior exigia dígitos
+// colados logo após a palavra "Telefone", então o formato usado nos cards reais
+// — "Telefone (44) 99112-0462" — não casava, e TODO card de audiência e prazo
+// era descartado por falta de telefone. Aceita parênteses, espaços e traços, e
+// evita confundir com CPF e número de processo, que não têm esse formato.
+// Depois do rótulo, pega o trecho inteiro de caracteres de telefone e só então
+// conta os dígitos — recortar por um formato fixo truncava números com o código
+// do país ("whatsapp 5544991120462" virava 5544991120).
+const RE_TELEFONE_ROTULADO = /(?:telefone|fone|celular|whats?\s?app|tel)\.?\s*[:\-]?\s*([\d().\s\-]{9,25})/i;
+const RE_TELEFONE_COM_DDD = /(\(\d{2}\)\s*9?\d{4}[\s.\-]?\d{4})/;
+const RE_TELEFONE_COLADO = /((?:55)?\d{10,11})(?!\d)/;
+
+export function extrairTelefoneDeTexto(texto: string): string | null {
+  const t = texto || '';
+  for (const re of [RE_TELEFONE_ROTULADO, RE_TELEFONE_COM_DDD, RE_TELEFONE_COLADO]) {
+    const m = t.match(re);
+    if (!m) continue;
+    const so = m[1].replace(/[^0-9]/g, '');
+    // Menos de 10 dígitos não é telefone com DDD; mais de 13 é outra coisa
+    // (ou dois números grudados) — nesse caso tenta o padrão seguinte
+    if (so.length >= 10 && so.length <= 13) return so;
+  }
+  return null;
+}
+
 export async function getCardsAudiencias(): Promise<any[]> {
   return getCardsFromList('audiência');
 }
@@ -119,13 +144,32 @@ export async function getCardsPrazos(): Promise<any[]> {
   return getCardsFromList('prazo');
 }
 
+function semAcento(s: string): string {
+  return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
 async function getCardsFromList(keyword: string): Promise<any[]> {
   try {
     const listsRes = await axios.get(`${BASE}/boards/${BOARD_OP()}/lists`, { params: auth() });
-    const targetList = listsRes.data.find((l: any) =>
-      l.name.toLowerCase().includes(keyword)
-    );
-    if (!targetList) return [];
+    const kw = semAcento(keyword);
+
+    // Pegar a PRIMEIRA lista que contém a palavra escolhia a lista errada: no
+    // quadro real, "SOLICITAÇÃO INICIAL e pedidos SEM PRAZO" vem antes de
+    // "PRAZO (atos com prazo)" — ou seja, os avisos de prazo liam justamente a
+    // lista de itens SEM prazo. Agora descarta as negativas ("sem prazo") e
+    // prefere a lista cujo nome COMEÇA com a palavra. Sem acento, para casar
+    // "audiencia" com "AUDIÊNCIAS".
+    const candidatas = listsRes.data.filter((l: any) => {
+      const nome = semAcento(String(l.name || ''));
+      return nome.includes(kw) && !nome.includes(`sem ${kw}`);
+    });
+    const targetList = candidatas.find((l: any) => semAcento(String(l.name)).startsWith(kw)) || candidatas[0];
+
+    if (!targetList) {
+      console.warn(`[trello] nenhuma lista corresponde a "${keyword}" — nenhum aviso será enviado`);
+      return [];
+    }
+    console.log(`[trello] lista "${keyword}" -> "${targetList.name}"`);
 
     const cardsRes = await axios.get(`${BASE}/lists/${targetList.id}/cards`, { params: auth() });
     return cardsRes.data;

@@ -1,4 +1,4 @@
-import { getCardsAudiencias, adicionarNotaCard } from '../integrations/trello';
+import { getCardsAudiencias, adicionarNotaCard, extrairTelefoneDeTexto } from '../integrations/trello';
 import { sendMessage } from '../responder/send';
 import { lookupSheets } from '../lookup/sheets';
 
@@ -28,7 +28,7 @@ export async function cronAudiencias(): Promise<void> {
       const audienciaDate = extractDateFromCard(card);
       if (!audienciaDate) continue;
 
-      const phone = extractPhoneFromCard(card);
+      const phone = extrairTelefoneDeTexto(card.desc || '');
       if (!phone) continue;
 
       const contact = await lookupSheets(phone);
@@ -82,12 +82,6 @@ function extractDateFromCard(card: any): Date | null {
   return null;
 }
 
-function extractPhoneFromCard(card: any): string | null {
-  const desc = card.desc || '';
-  const phoneMatch = desc.match(/(?:telefone|fone|celular|whatsapp)[:\s]+(\d+)/i) ||
-    desc.match(/(55\d{10,11}|\d{10,11})/i);
-  return phoneMatch ? phoneMatch[1].replace(/[^0-9]/g, '') : null;
-}
 
 function extractProcessFromCard(card: any): string | null {
   const combined = `${card.name} ${card.desc}`;
