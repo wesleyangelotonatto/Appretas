@@ -25,7 +25,14 @@ export const io = new SocketIO(server, {
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
-app.use(express.static(path.join(__dirname, '../public')));
+// O painel é um arquivo só, e o navegador o guardava em cache: toda mudança de
+// tela exigia Ctrl+F5 para aparecer, o que já causou confusão (botão novo
+// publicado e invisível na tela). Agora o HTML é sempre revalidado.
+app.use(express.static(path.join(__dirname, '../public'), {
+  setHeaders: (res, caminho) => {
+    if (caminho.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  },
+}));
 
 // Disponibiliza io para os módulos via app.locals
 app.locals.io = io;
