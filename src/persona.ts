@@ -165,10 +165,12 @@ export function ajudarSufixo(g: Genero): string {
 // Texto fixo definido por Wesley: não é gerado por IA nem varia com o gênero.
 // Era a correção que ele mais repetia ao revisar rascunhos — explicar que ela
 // ajuda por causa do volume, em vez de "estou disponível para receber".
-export const MSG_INICIAL = `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia. Consegue escrever aqui como posso ajudá-lo?`;
+export function MSG_INICIAL(g: Genero = 'N'): string {
+  return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia. Consegue escrever aqui como posso ${ajudarSufixo(g)}?`;
+}
 
-export function SAUDACAO(_g: Genero = 'N'): string {
-  return MSG_INICIAL;
+export function SAUDACAO(g: Genero = 'N'): string {
+  return MSG_INICIAL(g);
 }
 
 // Sem a apresentação no corpo: toda mensagem já sai assinada com "Iara - Secretária"
@@ -242,13 +244,14 @@ export const GLOSSARIO: Record<string, string> = {
 // Expressões de entusiasmo forçado — nunca soar falso ou artificial
 // Mensagens de texto fixo, que nunca passam pelo filtro de estilo
 const TEXTOS_FIXOS = new Set<string>([
-  MSG_INICIAL,
   MSG_PEDIR_DADOS_CASO,
   MSG_FORA_HORARIO,
   MSG_AMIGO,
   MSG_EMAIL,
   MSG_PIX,
 ]);
+// MSG_INICIAL existe em 3 variações de gênero — verificação por prefixo abaixo
+const MSG_INICIAL_PREFIXO = 'Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga.';
 
 const FRASES_PROIBIDAS = [
   /fico\s+feliz\s+em\s+ajud[aá][-\s]?l[oa]?/gi,
@@ -313,7 +316,7 @@ export function aplicarGlossario(texto: string): string {
   // para corrigir o que a IA redige; aplicá-lo aqui mutilava a mensagem inicial —
   // a regra que remove autoapresentação apagava justamente a apresentação, que
   // nessa mensagem é obrigatória.
-  if (TEXTOS_FIXOS.has(texto.trim())) return texto;
+  if (TEXTOS_FIXOS.has(texto.trim()) || texto.trim().startsWith(MSG_INICIAL_PREFIXO)) return texto;
 
   // Se a IA sugeriu que o cliente ligue/contate o Dr. Wesley diretamente, descarta a
   // mensagem inteira e usa a resposta padrão segura (a resolução nunca é terceirizada ao cliente)
