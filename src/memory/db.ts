@@ -106,6 +106,26 @@ export async function initDb(): Promise<void> {
       created_at INTEGER DEFAULT (unixepoch())
     );
 
+    -- Avisos de audiência e prazo aguardando confirmação de Wesley. Nada é
+    -- enviado sem que ele escolha a data correta: as fontes do card (vencimento,
+    -- descrição, comentário, checklist) divergem com frequência, e quem decide
+    -- qual vale é ele. datas_json guarda todas as datas achadas, com a origem.
+    CREATE TABLE IF NOT EXISTS avisos_pendentes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo TEXT,                 -- 'audiencia' | 'prazo'
+      card_id TEXT,
+      card_nome TEXT,
+      processo TEXT,
+      phone TEXT,
+      nome TEXT,
+      datas_json TEXT,           -- todas as datas encontradas, com origem
+      data_escolhida TEXT,       -- a que Wesley confirmou
+      mensagem TEXT,
+      status TEXT DEFAULT 'pendente',   -- pendente | enviado | descartado
+      created_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(card_id, tipo)
+    );
+
     -- Identificadores das mensagens já processadas. O Waspeed entrega o mesmo
     -- evento mais de uma vez (observado 2x e até 4x, com microssegundos de
     -- diferença), o que fazia o cliente receber a mesma resposta repetida.
@@ -281,6 +301,41 @@ export function contarTreinamento(): { total: number; editados: number } {
 
 export function limparTreinamento(): number {
   return getDb().prepare('DELETE FROM treinamento').run().changes;
+}
+
+// ─── Avisos de audiência e prazo aguardando confirmação ───────────────────────
+
+export function salvarAvisoPendente(a: {
+  tipo: string; cardId: string; cardNome: string; processo: string;
+  phone: string; nome: string; datasJson: string; mensagem: string;
+}): boolean {
+  // UNIQUE(card_id, tipo): reexecutar a varredura não duplica o que já está na fila
+  const r = getDb().prepare(`
+    INSERT OR IGNORE INTO avisos_pendentes
+      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(a.tipo, a.cardId, a.cardNome, a.processo, a.phone, a.nome, a.datasJson, a.mensagem);
+  return r.changes > 0;
+}
+
+export function listarAvisosPendentes(): any[] {
+  return getDb().prepare(
+    `SELECT * FROM avisos_pendentes WHERE status = 'pendente' ORDER BY created_at DESC, id DESC`
+  ).all() as any[];
+}
+
+export function getAvisoPendente(id: number): any {
+  return getDb().prepare('SELECT * FROM avisos_pendentes WHERE id = ?').get(id) as any;
+}
+
+export function marcarAvisoEnviado(id: number, dataEscolhida: string, mensagem: string) {
+  getDb().prepare(
+    `UPDATE avisos_pendentes SET status = 'enviado', data_escolhida = ?, mensagem = ? WHERE id = ?`
+  ).run(dataEscolhida, mensagem, id);
+}
+
+export function marcarAvisoDescartado(id: number) {
+  getDb().prepare(`UPDATE avisos_pendentes SET status = 'descartado' WHERE id = ?`).run(id);
 }
 
 // Marca um evento do WhatsApp como processado. Retorna true apenas na PRIMEIRA

@@ -8,6 +8,7 @@ import {
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
   getActiveConversations, getRecentCorrections, getGroups, setGroupActive,
   salvarTreinamento, listarTreinamento, contarTreinamento,
+  listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -135,6 +136,58 @@ commandRouter.post('/pending/descartar-todos', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
+});
+
+// ─── Avisos de audiência e prazo: confirmação antes de enviar ─────────────────
+
+// POST /command/avisos/gerar — varre as listas e enfileira para revisão
+commandRouter.post('/avisos/gerar', async (req: Request, res: Response) => {
+  try {
+    const { gerarAvisosParaConfirmacao } = await import('../flow/avisos');
+    const dias = parseInt(String(req.body?.dias || '')) || 15;
+    const r = await gerarAvisosParaConfirmacao(dias);
+    req.app.locals.io?.emit('avisos_update', {});
+    res.json({ ok: true, ...r });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+commandRouter.get('/avisos', (_req, res) => {
+  res.json(listarAvisosPendentes().map(a => ({ ...a, datas: JSON.parse(a.datas_json || '[]') })));
+});
+
+// POST /command/avisos/:id/aprovar — só aqui a mensagem sai, com a data que
+// Wesley confirmou e o texto que ele deixou
+commandRouter.post('/avisos/:id/aprovar', async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const { dataIso, mensagem } = req.body || {};
+  try {
+    const aviso = getAvisoPendente(id);
+    if (!aviso || aviso.status !== 'pendente') return res.status(404).json({ error: 'Aviso não está pendente' });
+    const texto = String(mensagem || aviso.mensagem || '').trim();
+    if (!texto) return res.status(400).json({ error: 'Mensagem vazia' });
+
+    await sendMessage(aviso.phone, texto);
+    marcarAvisoEnviado(id, String(dataIso || ''), texto);
+
+    // Em calibragem o envio é interceptado e guardado no banco de treinamento,
+    // então nada chega ao cliente e o histórico real não recebe a mensagem
+    if (!modoCalibragem()) {
+      saveMessage(aviso.phone, 'iara', texto);
+      req.app.locals.io?.emit('message', { phone: aviso.phone, role: 'iara', body: texto, timestamp: Date.now() });
+    }
+    req.app.locals.io?.emit('avisos_update', {});
+    res.json({ ok: true, calibragem: modoCalibragem() });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
+commandRouter.post('/avisos/:id/descartar', (req: Request, res: Response) => {
+  marcarAvisoDescartado(parseInt(req.params.id));
+  req.app.locals.io?.emit('avisos_update', {});
+  res.json({ ok: true });
 });
 
 // GET /command/diagnostico-cards — percorre as listas de audiências e prazos e

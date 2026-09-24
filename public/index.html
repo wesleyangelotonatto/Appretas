@@ -133,6 +133,7 @@
   <button id="btn-secretaria" onclick="toggleSecretaria()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--green);background:#0a2d10;color:var(--green);cursor:pointer;">Secretária: Ativa</button>
   <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
   <button id="btn-groups" onclick="toggleGroupsModal()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #3498db;background:#0a1a2d;color:#3498db;cursor:pointer;">Grupos</button>
+  <button id="btn-avisos" onclick="abrirAvisos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--blue);background:#0a1d2d;color:var(--blue);cursor:pointer;">Audiências e Prazos (<span id="avisos-count">0</span>)</button>
   <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Calibragem: desligada</button>
   <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
   <div class="integration-status">
@@ -145,6 +146,27 @@
 <div id="faixa-calibragem" style="display:none;background:#2d1a0a;border-bottom:1px solid var(--orange);color:var(--orange);padding:8px 16px;font-size:12px;text-align:center;">
   <strong>MODO CALIBRAGEM ATIVO</strong> — nenhuma mensagem está sendo enviada a clientes. Tudo que você revisar fica guardado só para treinamento.
   <a href="/command/treinamento?formato=csv" style="color:var(--orange);margin-left:10px;">baixar registros (CSV)</a>
+</div>
+
+<!-- Modal Audiências e Prazos -->
+<div class="modal-overlay" id="modal-avisos">
+  <div class="modal" style="max-width:860px;width:94%;">
+    <h3>Audiências e Prazos — confirmar antes de enviar</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+      As datas vêm do card do Trello e nem sempre concordam entre si. Escolha a que vale, ajuste o texto se quiser, e só então envie. Nada sai sem a sua confirmação.
+    </p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+      <label style="font-size:12px;color:var(--text-muted);">Próximos</label>
+      <input id="avisos-dias" type="number" value="15" min="1" max="90" style="width:64px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:6px;">
+      <label style="font-size:12px;color:var(--text-muted);">dias</label>
+      <button class="btn btn-followup" onclick="gerarAvisos()" id="btn-gerar-avisos">Buscar no Trello</button>
+      <span id="avisos-status" style="font-size:12px;color:var(--text-muted);"></span>
+    </div>
+    <div id="avisos-list" style="max-height:60vh;overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn" style="background:var(--surface2)" onclick="document.getElementById('modal-avisos').classList.remove('active')">Fechar</button>
+    </div>
+  </div>
 </div>
 
 <!-- Modal Ausência -->
@@ -775,6 +797,101 @@
   });
 
   checkSecretaria();
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // ─── Audiências e Prazos: confirmação antes de enviar ────────────────────
+  let avisos = [];
+
+  async function carregarAvisos() {
+    try {
+      avisos = await (await fetch('/command/avisos')).json();
+      document.getElementById('avisos-count').textContent = avisos.length;
+      renderAvisos();
+    } catch(e) {}
+  }
+
+  function abrirAvisos() {
+    document.getElementById('modal-avisos').classList.add('active');
+    carregarAvisos();
+  }
+
+  async function gerarAvisos() {
+    const btn = document.getElementById('btn-gerar-avisos');
+    const st = document.getElementById('avisos-status');
+    btn.disabled = true; st.textContent = 'buscando no Trello e na planilha...';
+    try {
+      const dias = parseInt(document.getElementById('avisos-dias').value) || 15;
+      const r = await (await fetch('/command/avisos/gerar', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({dias})
+      })).json();
+      st.textContent = r.criados + ' novo(s) para revisar. ' +
+        (r.semCliente?.length ? r.semCliente.length + ' sem cadastro na planilha.' : '');
+      await carregarAvisos();
+    } catch(e) { st.textContent = 'erro ao buscar'; }
+    btn.disabled = false;
+  }
+
+  function renderAvisos() {
+    const el = document.getElementById('avisos-list');
+    if (!avisos.length) {
+      el.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:12px;">Nenhum aviso aguardando confirmacao. Use "Buscar no Trello" para procurar audiencias e prazos.</div>';
+      return;
+    }
+    el.innerHTML = avisos.map(a => {
+      const datas = a.datas || [];
+      // Mais de uma data distinta = divergencia entre as fontes do card
+      const distintas = [...new Set(datas.map(d => d.dataIso))];
+      const alerta = distintas.length > 1
+        ? '<div style="background:#2d1a0a;border:1px solid var(--orange);color:var(--orange);padding:6px 8px;border-radius:6px;font-size:11px;margin:6px 0;">As fontes do card divergem. Confira qual data vale.</div>'
+        : '';
+      const opcoes = datas.map((d,i) => {
+        const dt = new Date(d.dataIso);
+        const rotulo = dt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'}) + ' ' +
+                       dt.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+        return '<label style="display:block;font-size:12px;margin:3px 0;cursor:pointer;">' +
+          '<input type="radio" name="data-'+a.id+'" value="'+escHtml(d.dataIso)+'"'+(i===0?' checked':'')+'> ' +
+          '<strong>'+rotulo+'</strong> <span style="color:var(--text-muted);">['+escHtml(d.origem)+']</span> ' +
+          '<span style="color:var(--text-muted);">'+escHtml((d.trecho||'').slice(0,70))+'</span></label>';
+      }).join('');
+      const tipo = a.tipo === 'audiencia' ? 'AUDIÊNCIA' : 'PRAZO';
+      return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--surface);">' +
+        '<div style="font-size:11px;color:var(--blue);font-weight:600;">'+tipo+'</div>' +
+        '<div style="font-size:13px;margin:2px 0;"><strong>'+escHtml(a.nome||'(sem nome)')+'</strong> — '+escHtml(a.phone)+'</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);">'+escHtml(a.card_nome||'')+'</div>' +
+        alerta +
+        '<div style="margin:6px 0;">'+opcoes+'</div>' +
+        '<textarea id="msg-'+a.id+'" rows="4" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font-size:13px;">'+escHtml(a.mensagem||'')+'</textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:6px;">' +
+          '<button class="btn btn-followup" onclick="aprovarAviso('+a.id+')">Confirmar e Enviar</button>' +
+          '<button class="btn" style="background:#c0392b;color:#fff" onclick="descartarAviso('+a.id+')">Descartar</button>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  async function aprovarAviso(id) {
+    const sel = document.querySelector('input[name="data-'+id+'"]:checked');
+    const msg = document.getElementById('msg-'+id).value;
+    const r = await (await fetch('/command/avisos/'+id+'/aprovar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ dataIso: sel ? sel.value : '', mensagem: msg })
+    })).json();
+    if (r.calibragem) {
+      document.getElementById('avisos-status').textContent = 'Modo calibragem: guardado para treinamento, nada foi enviado ao cliente.';
+    }
+    avisos = avisos.filter(a => a.id !== id);
+    document.getElementById('avisos-count').textContent = avisos.length;
+    renderAvisos();
+  }
+
+  async function descartarAviso(id) {
+    await fetch('/command/avisos/'+id+'/descartar', {method:'POST'});
+    avisos = avisos.filter(a => a.id !== id);
+    document.getElementById('avisos-count').textContent = avisos.length;
+    renderAvisos();
+  }
+
+  socket.on('avisos_update', () => carregarAvisos());
+  carregarAvisos();
   // ─────────────────────────────────────────────────────────────────────────
 
   // ─── Modo calibragem: treinar sem enviar nada ao cliente ─────────────────
