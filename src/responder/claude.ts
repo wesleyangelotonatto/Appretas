@@ -40,7 +40,14 @@ ${context}
 ÚLTIMA MENSAGEM DO CLIENTE (a que você está respondendo agora):
 "${clientMessage}"
 
-Redija a resposta da Iara considerando tudo que já foi dito na conversa. Máximo 3 parágrafos curtos. Linguagem simples. Nunca dar parecer jurídico. Nunca mencionar valores. Nunca repita uma pergunta cuja resposta já está no histórico acima.`;
+Redija a resposta da Iara considerando tudo que já foi dito na conversa.
+
+FORMATO OBRIGATÓRIO: UM parágrafo curto, no máximo 3 frases. Formal, direto e objetivo.
+- Sem acolhimento e sem sentimentalismo: nada de "compreendo sua preocupação", "imagino como deve ser difícil", "sinto muito", "fique tranquilo"
+- Sem encerramento de cortesia que não acrescenta ("fico à disposição", "qualquer dúvida estou aqui", "espero ter ajudado")
+- Sem saudação: a conversa já está em andamento
+- Não repita o que já foi dito antes nesta conversa, nem com outras palavras. Se não há nada novo a dizer, responda apenas o essencial
+- Nunca dar parecer jurídico. Nunca mencionar valores. Nunca repetir pergunta cuja resposta já está no histórico`;
 
   const corrections = getRecentCorrections(20);
   const correctionsSection = corrections.length > 0

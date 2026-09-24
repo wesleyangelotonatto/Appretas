@@ -127,6 +127,16 @@ export async function initDb(): Promise<void> {
       UNIQUE(card_id, tipo)
     );
 
+    -- Que tipo de mensagem pronta já foi dita a cada contato. Sem isso a mesma
+    -- frase (saudação, pedido dos dados do caso, aviso de cunho pessoal) saía a
+    -- cada mensagem recebida, o que deixa o atendimento repetitivo e robótico.
+    CREATE TABLE IF NOT EXISTS tipos_enviados (
+      phone TEXT,
+      tipo TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_tipos_enviados ON tipos_enviados(phone, tipo, created_at);
+
     -- Identificadores das mensagens já processadas. O Waspeed entrega o mesmo
     -- evento mais de uma vez (observado 2x e até 4x, com microssegundos de
     -- diferença), o que fazia o cliente receber a mesma resposta repetida.
@@ -310,6 +320,19 @@ export function limparTreinamento(): number {
 }
 
 // ─── Avisos de audiência e prazo aguardando confirmação ───────────────────────
+
+// Uma mensagem pronta do mesmo tipo já foi dita a este contato há pouco?
+export function jaEnviouTipo(phone: string, tipo: string, horas = 24): boolean {
+  const limite = Math.floor(Date.now() / 1000) - horas * 3600;
+  const r = getDb().prepare(
+    'SELECT 1 FROM tipos_enviados WHERE phone = ? AND tipo = ? AND created_at > ? LIMIT 1'
+  ).get(phone, tipo, limite);
+  return !!r;
+}
+
+export function registrarTipoEnviado(phone: string, tipo: string) {
+  getDb().prepare('INSERT INTO tipos_enviados (phone, tipo) VALUES (?, ?)').run(phone, tipo);
+}
 
 // Acrescenta uma coluna a uma tabela já existente, se ela ainda não estiver lá
 function garantirColuna(tabela: string, coluna: string, definicao: string) {

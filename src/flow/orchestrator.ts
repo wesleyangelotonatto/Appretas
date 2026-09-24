@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley } from '../memory/db';
+import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -206,6 +206,56 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
+    // Janela de agrupamento: o cliente costuma mandar varias mensagens e audios
+    // seguidos. Responder cada uma vira uma enxurrada de mensagens iguais e um
+    // atendimento robotico. Aqui a mensagem so e registrada; a resposta sai uma
+    // vez so, depois de alguns minutos de silencio dele, lendo o bloco inteiro.
+    agendarResposta(phone, textBody, io, waName);
+
+  } catch (err) {
+    console.error('[orchestrator] erro ao processar mensagem:', err);
+    msg.io?.emit('error', { phone, error: String(err) });
+  }
+}
+
+// Minutos de silencio do cliente antes de responder. Ajustavel por ambiente.
+const JANELA_AGRUPAMENTO_MS = (parseInt(process.env.MINUTOS_AGRUPAMENTO || '') || 5) * 60 * 1000;
+
+interface JanelaConversa { textos: string[]; timer: NodeJS.Timeout | null; io: any; waName?: string }
+const janelas = new Map<string, JanelaConversa>();
+
+function agendarResposta(phone: string, texto: string, io: any, waName?: string) {
+  const j: JanelaConversa = janelas.get(phone) || { textos: [], timer: null, io, waName };
+  if (texto && texto.trim()) j.textos.push(texto.trim());
+  j.io = io;
+  j.waName = waName || j.waName;
+
+  // Cada nova mensagem reinicia a contagem: enquanto o cliente fala, nao responde
+  if (j.timer) clearTimeout(j.timer);
+  j.timer = setTimeout(() => {
+    janelas.delete(phone);
+    const corpo = j.textos.join('\n');
+    console.log(`[orchestrator] janela fechada para ${phone} — ${j.textos.length} mensagem(ns) agrupada(s)`);
+    responderConversa(phone, corpo, j.io, j.waName).catch(err =>
+      console.error('[orchestrator] erro ao responder conversa agrupada:', err));
+  }, JANELA_AGRUPAMENTO_MS);
+
+  janelas.set(phone, j);
+  console.log(`[orchestrator] mensagem de ${phone} guardada; resposta em ate ${JANELA_AGRUPAMENTO_MS / 60000} min de silencio`);
+}
+
+// Responde UMA vez o bloco de mensagens acumulado na janela
+async function responderConversa(phone: string, textBody: string, io: any, waName?: string) {
+  try {
+    const session = getSession(phone);
+
+    // Silêncio é resposta válida: quando o cliente está apenas relatando,
+    // mandando documentos ou confirmando algo, responder só gera ruído.
+    if (!(await precisaDeResposta(phone, textBody))) {
+      console.log(`[orchestrator] ${phone} não pede resposta — nenhuma mensagem gerada`);
+      return;
+    }
+
     // 5a. Detecta gênero — pelo texto da mensagem e pelo nome já salvo na sessão
     const genero: Genero = detectarGenero(textBody, session?.name);
 
@@ -350,7 +400,12 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     const hoje = Math.floor(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate(), 3, 0, 0) / 1000);
     const isFirstMessageToday = !session || !session.updated_at || session.updated_at < hoje;
     if (isFirstMessageToday) {
-      await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
+      // Mesmo no primeiro contato do dia, não repete a apresentação se ela já
+      // saiu para este contato nas últimas 24h (ex.: conversa que virou a noite)
+      if (!jaEnviouTipo(phone, 'saudacao', 24)) {
+        await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
+        registrarTipoEnviado(phone, 'saudacao');
+      }
       if (!session) return; // primeiro contato absoluto: aguarda resposta antes de continuar
     }
 
@@ -384,8 +439,15 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
               break;
             }
             // Mensagem fixa (não gerada por IA) para garantir a frase obrigatória exata
+            // Já pedimos esses dados a este contato há pouco: insistir a cada
+            // mensagem é o que torna o atendimento repetitivo
+            if (jaEnviouTipo(phone, 'pedido_dados_caso', 24)) {
+              console.log(`[orchestrator] ${phone} — pedido de dados do caso já foi feito, não repete`);
+              break;
+            }
             draft = MSG_PEDIR_DADOS_PROCESSO(temNome);
             context = 'pedido_dados_processo';
+            registrarTipoEnviado(phone, 'pedido_dados_caso');
             break;
           }
 
@@ -434,7 +496,13 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           break;
         }
         case 'AMIGO_PESSOAL': {
+          // Dizer "parece cunho pessoal" a cada mensagem do amigo é constrangedor
+          if (jaEnviouTipo(phone, 'amigo_pessoal', 24)) {
+            console.log(`[orchestrator] ${phone} — aviso de cunho pessoal já foi dado, não repete`);
+            break;
+          }
           draft = MSG_AMIGO;
+          registrarTipoEnviado(phone, 'amigo_pessoal');
           io?.emit('alert', { phone, type: 'amigo', message: `Mensagem pessoal de ${contact?.name || phone}`, priority: 'low' });
           break;
         }
@@ -465,8 +533,8 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     }
 
   } catch (err) {
-    console.error('[orchestrator] erro ao processar mensagem:', err);
-    msg.io?.emit('error', { phone, error: String(err) });
+    console.error('[orchestrator] erro ao responder conversa:', err);
+    io?.emit('error', { phone, error: String(err) });
   }
 }
 
@@ -496,6 +564,45 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
 // não tivesse lido a conversa. Em caso de erro ou dúvida, devolve false e a
 // frase fixa sai, que é o comportamento que Wesley pediu como padrão.
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// O bloco de mensagens do cliente realmente pede uma resposta do escritório?
+// Nem toda mensagem pede: relato, desabafo, envio de documento e confirmações
+// ("ok", "obrigado") não precisam de retorno — responder a tudo é o que deixa o
+// atendimento exaustivo. Em caso de erro, responde, para não deixar no vácuo.
+async function precisaDeResposta(phone: string, texto: string): Promise<boolean> {
+  const t = (texto || '').trim();
+  if (!t) return false;
+  try {
+    const historico = getHistory(phone, 8)
+      .map((m: any) => `${m.role === 'client' ? 'Cliente' : m.role === 'wesley' ? 'Dr. Wesley' : 'Iara'}: ${(m.body || '').slice(0, 300)}`)
+      .join('\n');
+
+    const prompt = `Atendimento de um escritório de advocacia no WhatsApp.
+
+HISTÓRICO RECENTE:
+${historico}
+
+BLOCO DE MENSAGENS QUE O CLIENTE ACABOU DE ENVIAR:
+"${t.slice(0, 1500)}"
+
+O escritório precisa responder algo agora? Responda false quando for apenas relato, desabafo, envio de documentos sem pergunta, agradecimento, confirmação ("ok", "entendi", "combinado") ou quando a última fala da Iara já cobriu o assunto e o cliente não trouxe nada novo.
+
+APENAS JSON: {"precisaResponder": true ou false}`;
+
+    const r = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const b = r.content[0];
+    const bruto = b && b.type === 'text' ? b.text : '{}';
+    const m = bruto.match(/\{[\s\S]*\}/);
+    return JSON.parse(m ? m[0] : bruto).precisaResponder !== false;
+  } catch (err) {
+    console.error('[orchestrator] falha ao avaliar se precisa responder:', err);
+    return true;
+  }
+}
 
 async function conversaJaTrataDeCaso(phone: string, mensagemAtual: string): Promise<boolean> {
   try {
