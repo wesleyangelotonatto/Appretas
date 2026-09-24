@@ -136,6 +136,37 @@ export function extrairTelefoneDeTexto(texto: string): string | null {
   return null;
 }
 
+// Comentários e checklists do card. A data da audiência nem sempre está no
+// campo de vencimento — muitas vezes está escrita num comentário da equipe
+// ("Audiência de Conciliação em 25 de setembro de 2026 às 14:30").
+export async function getCardComentarios(cardId: string): Promise<string[]> {
+  try {
+    const res = await axios.get(`${BASE}/cards/${cardId}/actions`, {
+      params: { ...auth(), filter: 'commentCard', limit: 20 },
+    });
+    return (res.data || []).map((a: any) => String(a?.data?.text || '')).filter(Boolean);
+  } catch (err) {
+    console.error('[trello] erro ao ler comentários do card:', err);
+    return [];
+  }
+}
+
+export async function getCardChecklists(cardId: string): Promise<string[]> {
+  try {
+    const res = await axios.get(`${BASE}/cards/${cardId}/checklists`, { params: auth() });
+    const itens: string[] = [];
+    for (const cl of res.data || []) {
+      for (const it of cl.checkItems || []) {
+        if (it?.name) itens.push(String(it.name));
+      }
+    }
+    return itens;
+  } catch (err) {
+    console.error('[trello] erro ao ler checklists do card:', err);
+    return [];
+  }
+}
+
 export async function getCardsAudiencias(): Promise<any[]> {
   return getCardsFromList('audiência');
 }

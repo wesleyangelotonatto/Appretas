@@ -18,6 +18,54 @@ export interface ContactInfo {
   rawRow: any[];
 }
 
+// Só os dígitos do número de processo: a planilha e o card podem escrever o
+// mesmo processo com ou sem pontuação (0007404-96.2026.8.16.0058 x 00074049620268160058)
+function soDigitos(s: string): string {
+  return String(s || '').replace(/[^0-9]/g, '');
+}
+
+// Busca o cliente pelo NÚMERO DO PROCESSO, que é a chave do cadastro. Os avisos
+// de audiência e prazo nascem de um card de processo, então partir do processo
+// é mais confiável do que depender de o telefone estar escrito no card.
+export async function lookupSheetsPorProcesso(numeroProcesso: string): Promise<ContactInfo | null> {
+  const alvo = soDigitos(numeroProcesso);
+  if (alvo.length < 15) return null; // número de processo CNJ tem 20 dígitos
+
+  try {
+    const sheets = google.sheets({ version: 'v4', auth: getAuth() });
+    const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEETS_ID, range: 'A:Z' });
+    const rows = res.data.values || [];
+    if (rows.length < 2) return null;
+
+    const headers = rows[0].map((h: string) => h?.toLowerCase().trim());
+    const phoneColIndex = headers.findIndex((h: string) =>
+      h.includes('telefone') || h.includes('fone') || h.includes('celular') || h.includes('whatsapp')
+    );
+    const nameColIndex = headers.findIndex((h: string) => h.includes('nome') || h.includes('cliente'));
+    const processColIndex = headers.findIndex((h: string) =>
+      h.includes('processo') || h.includes('número') || h.includes('numero')
+    );
+    if (processColIndex === -1) return null;
+
+    for (const row of rows.slice(1)) {
+      const celula = soDigitos(row[processColIndex]);
+      if (!celula) continue;
+      // A célula pode conter mais de um processo; compara por conter o alvo
+      if (celula === alvo || celula.includes(alvo)) {
+        const name = nameColIndex >= 0 ? String(row[nameColIndex] || '') : '';
+        const phone = phoneColIndex >= 0 ? soDigitos(row[phoneColIndex]) : '';
+        const processRaw = String(row[processColIndex] || '');
+        const processes = processRaw.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean);
+        return { name, phone, processes, rawRow: row };
+      }
+    }
+    return null;
+  } catch (err) {
+    console.error('[sheets] erro na busca por processo:', err);
+    return null;
+  }
+}
+
 export async function lookupSheets(phone: string): Promise<ContactInfo | null> {
   try {
     const auth = getAuth();

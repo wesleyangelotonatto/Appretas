@@ -137,6 +137,39 @@ commandRouter.post('/pending/descartar-todos', (req, res) => {
   }
 });
 
+// GET /command/diagnostico-cards — percorre as listas de audiências e prazos e
+// mostra, para cada card, o caminho inteiro: número do processo, datas achadas
+// (e de onde vieram) e o cliente localizado na planilha pelo número do processo.
+// Só lê; não envia nada.
+commandRouter.get('/diagnostico-cards', async (_req, res) => {
+  try {
+    const { getCardsAudiencias, getCardsPrazos } = await import('../integrations/trello');
+    const { coletarDatasDoCard, extrairNumeroProcesso } = await import('../flow/dadosCard');
+    const { lookupSheetsPorProcesso } = await import('../lookup/sheets');
+
+    const saida: any = {};
+    for (const [rotulo, buscar] of [['audiencias', getCardsAudiencias], ['prazos', getCardsPrazos]] as const) {
+      const cards = await buscar();
+      saida[rotulo] = { total: cards.length, cards: [] as any[] };
+
+      for (const card of cards.slice(0, 30)) {
+        const processo = extrairNumeroProcesso(`${card.name || ''} ${card.desc || ''}`);
+        const datas = await coletarDatasDoCard(card);
+        const cliente = processo ? await lookupSheetsPorProcesso(processo) : null;
+        saida[rotulo].cards.push({
+          card: String(card.name || '').slice(0, 90),
+          processo: processo || '(nenhum número encontrado)',
+          datas: datas.map(d => ({ origem: d.origem, data: d.dataIso, trecho: d.trecho.slice(0, 110) })),
+          cliente: cliente ? { nome: cliente.name, telefone: cliente.phone } : '(não localizado na planilha)',
+        });
+      }
+    }
+    res.json(saida);
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
+});
+
 // GET /command/pending — lista aprovações pendentes (modo treino)
 commandRouter.get('/pending', (_req, res) => {
   res.json(getPendingApprovals());
