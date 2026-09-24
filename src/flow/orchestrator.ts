@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { io as getIo } from '../server';
 import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
@@ -370,6 +371,18 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           const temDadosSuficientes = temProcesso || (temNome && temContraParte);
 
           if (!temDadosSuficientes) {
+            // Pedir "contra quem é o processo" no meio de uma conversa que já
+            // trata de um caso conhecido soa como se ela não tivesse lido nada.
+            // Só manda a frase fixa quando o caso ainda não está em pauta.
+            if (await conversaJaTrataDeCaso(phone, textBody)) {
+              console.log(`[orchestrator] ${phone} já trata de um caso conhecido — não pede os dados de novo`);
+              context = JSON.stringify({
+                contact, intent: classification.intent, customInstruction,
+                observacao: 'A conversa já trata de um caso específico. NÃO peça de novo contra quem é o processo nem o número — responda ao que o cliente disse agora, usando o histórico.',
+              });
+              draft = await draftResponse('DESCONHECIDO', textBody, context, generoFinal, historicoConversa);
+              break;
+            }
             // Mensagem fixa (não gerada por IA) para garantir a frase obrigatória exata
             draft = MSG_PEDIR_DADOS_PROCESSO(temNome);
             context = 'pedido_dados_processo';
@@ -476,6 +489,50 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
 }
 
 // Horário comercial real: seg-sex, 08:30-17:00 — define QUANDO o aviso de ausência é necessário
+// A conversa já está tratando de um caso concreto? Usado antes de mandar a frase
+// fixa que pede contra quem é o processo: se o caso já está em pauta — porque o
+// cliente já disse, porque Wesley já respondeu sobre ele, ou porque a mensagem
+// de agora dá seguimento ao que já foi falado — repetir o pedido soa como se ela
+// não tivesse lido a conversa. Em caso de erro ou dúvida, devolve false e a
+// frase fixa sai, que é o comportamento que Wesley pediu como padrão.
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+async function conversaJaTrataDeCaso(phone: string, mensagemAtual: string): Promise<boolean> {
+  try {
+    const historico = getHistory(phone, 10);
+    // Sem histórico não há caso anterior possível
+    if (!historico || historico.length < 2) return false;
+
+    const linhas = historico
+      .map((m: any) => `${m.role === 'client' ? 'Cliente' : m.role === 'wesley' ? 'Dr. Wesley' : 'Iara'}: ${(m.body || '').slice(0, 400)}`)
+      .join('\n');
+
+    const prompt = `Conversa de WhatsApp de um escritório de advocacia.
+
+HISTÓRICO (mais antiga primeiro):
+${linhas}
+
+MENSAGEM DE AGORA, do cliente: "${(mensagemAtual || '').slice(0, 600)}"
+
+Responda: esta conversa JÁ trata de um caso específico e identificado (um processo, contrato ou assunto concreto que já foi nomeado antes), de modo que perguntar agora "contra quem é o processo e qual o número" seria repetitivo e fora de contexto?
+
+APENAS JSON: {"jaTrataDeCaso": true ou false}`;
+
+    const resposta = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const bloco = resposta.content[0];
+    const bruto = bloco && bloco.type === 'text' ? bloco.text : '{}';
+    const m = bruto.match(/\{[\s\S]*\}/);
+    return JSON.parse(m ? m[0] : bruto).jaTrataDeCaso === true;
+  } catch (err) {
+    console.error('[orchestrator] falha ao verificar se a conversa já trata de um caso:', err);
+    return false;
+  }
+}
+
 // Quantos minutos de silêncio do Wesley para considerar que ele parou de atender
 const MINUTOS_ATIVIDADE_WESLEY = parseInt(process.env.MINUTOS_ATIVIDADE_WESLEY || '') || 90;
 

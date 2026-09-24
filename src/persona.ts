@@ -101,8 +101,13 @@ export function ajudarSufixo(g: Genero): string {
 
 // ─── Mensagens fixas com suporte a gênero ────────────────────────────────────
 
-export function SAUDACAO(g: Genero = 'N'): string {
-  return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou disponível para receber sua mensagem e repassá-la ao Dr. Wesley. Como posso ${ajudarSufixo(g)}?`;
+// Texto fixo definido por Wesley: não é gerado por IA nem varia com o gênero.
+// Era a correção que ele mais repetia ao revisar rascunhos — explicar que ela
+// ajuda por causa do volume, em vez de "estou disponível para receber".
+export const MSG_INICIAL = `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia. Consegue escrever aqui como posso ajudá-lo?`;
+
+export function SAUDACAO(_g: Genero = 'N'): string {
+  return MSG_INICIAL;
 }
 
 // Sem a apresentação no corpo: toda mensagem já sai assinada com "Iara - Secretária"
@@ -130,9 +135,13 @@ export const MSG_EMAIL = `O e-mail do Dr. Wesley é wesleyveigaadvogados@gmail.c
 export const MSG_PIX = `Os dados para PIX são:\nChave: wesleyveigaadvogados@gmail.com\nBanco: Sicoob\nTitular: Wesley Angelo Tonatto Veiga\nConta Corrente: 395.590-7`;
 
 // Pergunta qualificadora obrigatória para localizar processo/contrato: nome completo (se faltar) + contra quem/com quem (obrigatório) + número (recomendável)
-export function MSG_PEDIR_DADOS_PROCESSO(temNome: boolean): string {
-  const pedirNome = temNome ? '' : 'Para localizar o caso, preciso do nome completo da parte. ';
-  return `${pedirNome}Preciso saber contra quem é o processo (ou com quem é o contrato) e, de preferência, o número. Caso não tenha essas informações, preciso aguardar o Dr. Wesley me responder.`;
+// Texto fixo definido por Wesley, sempre igual. Só sai quando a conversa ainda
+// NÃO está tratando de um caso conhecido — ver conversaJaTrataDeCaso em
+// flow/orchestrator.ts; do contrário pedir esses dados não faria sentido.
+export const MSG_PEDIR_DADOS_CASO = `Pra eu tentar te ajudar e ver com ele sobre seu caso, preciso saber contra quem é o processo (ou com quem é o contrato) e, de preferência, o número se você tiver. Caso não tenha essas informações, preciso aguardar o Dr. Wesley me responder e poder te passar uma posição. Pode ser?`;
+
+export function MSG_PEDIR_DADOS_PROCESSO(_temNome: boolean): string {
+  return MSG_PEDIR_DADOS_CASO;
 }
 
 export function MSG_RECUSA_SECRETARIA(g: Genero = 'N'): string {
@@ -170,6 +179,16 @@ export const GLOSSARIO: Record<string, string> = {
 };
 
 // Expressões de entusiasmo forçado — nunca soar falso ou artificial
+// Mensagens de texto fixo, que nunca passam pelo filtro de estilo
+const TEXTOS_FIXOS = new Set<string>([
+  MSG_INICIAL,
+  MSG_PEDIR_DADOS_CASO,
+  MSG_FORA_HORARIO,
+  MSG_AMIGO,
+  MSG_EMAIL,
+  MSG_PIX,
+]);
+
 const FRASES_PROIBIDAS = [
   /fico\s+feliz\s+em\s+ajud[aá][-\s]?l[oa]?/gi,
   /ficarei\s+feliz\s+em\s+ajud[aá][-\s]?l[oa]?/gi,
@@ -198,6 +217,12 @@ const TERCEIRA_PESSOA_FIXES: Array<[RegExp, string]> = [
 ];
 
 export function aplicarGlossario(texto: string): string {
+  // Textos definidos por Wesley saem exatamente como ele escreveu. O filtro existe
+  // para corrigir o que a IA redige; aplicá-lo aqui mutilava a mensagem inicial —
+  // a regra que remove autoapresentação apagava justamente a apresentação, que
+  // nessa mensagem é obrigatória.
+  if (TEXTOS_FIXOS.has(texto.trim())) return texto;
+
   // Se a IA sugeriu que o cliente ligue/contate o Dr. Wesley diretamente, descarta a
   // mensagem inteira e usa a resposta padrão segura (a resolução nunca é terceirizada ao cliente)
   if (SUGESTAO_LIGAR_DIRETO_RE.test(texto)) {
