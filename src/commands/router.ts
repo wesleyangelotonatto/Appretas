@@ -141,28 +141,52 @@ commandRouter.post('/pending/descartar-todos', (req, res) => {
 // mostra, para cada card, o caminho inteiro: número do processo, datas achadas
 // (e de onde vieram) e o cliente localizado na planilha pelo número do processo.
 // Só lê; não envia nada.
-commandRouter.get('/diagnostico-cards', async (_req, res) => {
+commandRouter.get('/diagnostico-cards', async (req, res) => {
   try {
     const { getCardsAudiencias, getCardsPrazos } = await import('../integrations/trello');
     const { coletarDatasDoCard, extrairNumeroProcesso } = await import('../flow/dadosCard');
-    const { lookupSheetsPorProcesso } = await import('../lookup/sheets');
+    const { carregarPlanilha, acharPorProcesso } = await import('../lookup/sheets');
 
-    const saida: any = {};
+    const dias = parseInt(String(req.query.dias || '')) || 15;
+    const agora = Date.now();
+    const limite = agora + dias * 86400000;
+    const planilha = await carregarPlanilha(); // uma vez só, não por card
+
+    const saida: any = { janelaDias: dias };
     for (const [rotulo, buscar] of [['audiencias', getCardsAudiencias], ['prazos', getCardsPrazos]] as const) {
       const cards = await buscar();
-      saida[rotulo] = { total: cards.length, cards: [] as any[] };
-
-      for (const card of cards.slice(0, 30)) {
+      // Comentários e checklists de cada card em paralelo — sequencial estourava o tempo
+      const analisados = await Promise.all(cards.map(async (card: any) => {
         const processo = extrairNumeroProcesso(`${card.name || ''} ${card.desc || ''}`);
         const datas = await coletarDatasDoCard(card);
-        const cliente = processo ? await lookupSheetsPorProcesso(processo) : null;
-        saida[rotulo].cards.push({
-          card: String(card.name || '').slice(0, 90),
-          processo: processo || '(nenhum número encontrado)',
-          datas: datas.map(d => ({ origem: d.origem, data: d.dataIso, trecho: d.trecho.slice(0, 110) })),
-          cliente: cliente ? { nome: cliente.name, telefone: cliente.phone } : '(não localizado na planilha)',
-        });
-      }
+        return { card, processo, datas };
+      }));
+
+      const naJanela = analisados
+        .map(a => {
+          const futuras = a.datas.filter(d => {
+            const t = new Date(d.dataIso).getTime();
+            return t >= agora - 86400000 && t <= limite;
+          });
+          return { ...a, futuras };
+        })
+        .filter(a => a.futuras.length > 0)
+        .sort((a, b) => a.futuras[0].dataIso.localeCompare(b.futuras[0].dataIso));
+
+      saida[rotulo] = {
+        totalNaLista: cards.length,
+        naJanela: naJanela.length,
+        cards: naJanela.map(a => {
+          const cliente = a.processo ? acharPorProcesso(planilha, a.processo) : null;
+          return {
+            card: String(a.card.name || '').slice(0, 95),
+            processo: a.processo || '(nenhum número encontrado)',
+            datas: a.futuras.map(d => ({ origem: d.origem, data: d.dataIso, trecho: d.trecho.slice(0, 120) })),
+            outrasDatas: a.datas.filter(d => !a.futuras.includes(d)).map(d => ({ origem: d.origem, data: d.dataIso })),
+            cliente: cliente ? { nome: cliente.name, telefone: cliente.phone } : '(não localizado na planilha)',
+          };
+        }),
+      };
     }
     res.json(saida);
   } catch (err) {

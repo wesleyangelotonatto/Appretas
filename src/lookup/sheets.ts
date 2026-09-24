@@ -24,13 +24,20 @@ function soDigitos(s: string): string {
   return String(s || '').replace(/[^0-9]/g, '');
 }
 
-// Busca o cliente pelo NÚMERO DO PROCESSO, que é a chave do cadastro. Os avisos
-// de audiência e prazo nascem de um card de processo, então partir do processo
-// é mais confiável do que depender de o telefone estar escrito no card.
-export async function lookupSheetsPorProcesso(numeroProcesso: string): Promise<ContactInfo | null> {
-  const alvo = soDigitos(numeroProcesso);
-  if (alvo.length < 15) return null; // número de processo CNJ tem 20 dígitos
+export interface Planilha {
+  rows: any[][];
+  colTelefone: number;
+  colNome: number;
+  colProcesso: number;
+}
 
+// Carrega a planilha uma vez e guarda por alguns minutos. Sem isso, um lote de
+// 25 cards baixava a planilha inteira 25 vezes e a consulta estourava o tempo.
+let cache: { em: number; dados: Planilha | null } = { em: 0, dados: null };
+const CACHE_MS = 5 * 60 * 1000;
+
+export async function carregarPlanilha(forcar = false): Promise<Planilha | null> {
+  if (!forcar && cache.dados && Date.now() - cache.em < CACHE_MS) return cache.dados;
   try {
     const sheets = google.sheets({ version: 'v4', auth: getAuth() });
     const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEETS_ID, range: 'A:Z' });
@@ -38,32 +45,48 @@ export async function lookupSheetsPorProcesso(numeroProcesso: string): Promise<C
     if (rows.length < 2) return null;
 
     const headers = rows[0].map((h: string) => h?.toLowerCase().trim());
-    const phoneColIndex = headers.findIndex((h: string) =>
-      h.includes('telefone') || h.includes('fone') || h.includes('celular') || h.includes('whatsapp')
-    );
-    const nameColIndex = headers.findIndex((h: string) => h.includes('nome') || h.includes('cliente'));
-    const processColIndex = headers.findIndex((h: string) =>
-      h.includes('processo') || h.includes('número') || h.includes('numero')
-    );
-    if (processColIndex === -1) return null;
-
-    for (const row of rows.slice(1)) {
-      const celula = soDigitos(row[processColIndex]);
-      if (!celula) continue;
-      // A célula pode conter mais de um processo; compara por conter o alvo
-      if (celula === alvo || celula.includes(alvo)) {
-        const name = nameColIndex >= 0 ? String(row[nameColIndex] || '') : '';
-        const phone = phoneColIndex >= 0 ? soDigitos(row[phoneColIndex]) : '';
-        const processRaw = String(row[processColIndex] || '');
-        const processes = processRaw.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean);
-        return { name, phone, processes, rawRow: row };
-      }
-    }
-    return null;
+    const dados: Planilha = {
+      rows,
+      colTelefone: headers.findIndex((h: string) =>
+        h.includes('telefone') || h.includes('fone') || h.includes('celular') || h.includes('whatsapp')),
+      colNome: headers.findIndex((h: string) => h.includes('nome') || h.includes('cliente')),
+      colProcesso: headers.findIndex((h: string) =>
+        h.includes('processo') || h.includes('número') || h.includes('numero')),
+    };
+    cache = { em: Date.now(), dados };
+    return dados;
   } catch (err) {
-    console.error('[sheets] erro na busca por processo:', err);
+    console.error('[sheets] erro ao carregar planilha:', err);
     return null;
   }
+}
+
+// Acha o cliente pelo NÚMERO DO PROCESSO, que é a chave do cadastro. Os avisos
+// de audiência e prazo nascem de um card de processo, então partir do processo
+// é mais confiável do que depender de o telefone estar escrito no card.
+export function acharPorProcesso(planilha: Planilha | null, numeroProcesso: string): ContactInfo | null {
+  const alvo = soDigitos(numeroProcesso);
+  if (!planilha || planilha.colProcesso === -1 || alvo.length < 15) return null;
+
+  for (const row of planilha.rows.slice(1)) {
+    const celula = soDigitos(row[planilha.colProcesso]);
+    if (!celula) continue;
+    // A célula pode conter mais de um processo; compara por conter o alvo
+    if (celula === alvo || celula.includes(alvo)) {
+      const processRaw = String(row[planilha.colProcesso] || '');
+      return {
+        name: planilha.colNome >= 0 ? String(row[planilha.colNome] || '') : '',
+        phone: planilha.colTelefone >= 0 ? soDigitos(row[planilha.colTelefone]) : '',
+        processes: processRaw.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean),
+        rawRow: row,
+      };
+    }
+  }
+  return null;
+}
+
+export async function lookupSheetsPorProcesso(numeroProcesso: string): Promise<ContactInfo | null> {
+  return acharPorProcesso(await carregarPlanilha(), numeroProcesso);
 }
 
 export async function lookupSheets(phone: string): Promise<ContactInfo | null> {
