@@ -375,11 +375,22 @@ export function salvarAvisoPendente(a: {
   phone: string; nome: string; datasJson: string; mensagem: string; cadastrado: boolean;
   partes?: string; juizo?: string;
 }): boolean {
-  // UNIQUE(card_id, tipo): reexecutar a varredura não duplica o que já está na fila
+  // UNIQUE(card_id, tipo) impede duplicar o que já está na fila. Mas o descarte
+  // apenas marca a linha, e com INSERT OR IGNORE o card descartado nunca voltava
+  // — depois de "descartar todos" para regerar, só 8 de 29 reapareciam. Agora um
+  // card DESCARTADO é reaproveitado com o texto novo; um já ENVIADO continua de
+  // fora, para o cliente não receber o mesmo aviso duas vezes.
   const r = getDb().prepare(`
-    INSERT OR IGNORE INTO avisos_pendentes
+    INSERT INTO avisos_pendentes
       (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado, partes, juizo)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(card_id, tipo) DO UPDATE SET
+      card_nome = excluded.card_nome, processo = excluded.processo,
+      phone = excluded.phone, nome = excluded.nome,
+      datas_json = excluded.datas_json, mensagem = excluded.mensagem,
+      cadastrado = excluded.cadastrado, partes = excluded.partes, juizo = excluded.juizo,
+      status = 'pendente', data_escolhida = NULL, created_at = unixepoch()
+    WHERE avisos_pendentes.status = 'descartado'
   `).run(a.tipo, a.cardId, a.cardNome, a.processo, a.phone, a.nome, a.datasJson, a.mensagem,
          a.cadastrado ? 1 : 0, a.partes || '', a.juizo || '');
   return r.changes > 0;
