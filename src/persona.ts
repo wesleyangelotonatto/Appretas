@@ -155,9 +155,9 @@ export function tratamento(g: Genero): string {
   return g === 'F' ? 'a senhora' : g === 'M' ? 'o senhor' : 'o(a) senhor(a)';
 }
 
-/** Retorna "ajudá-lo" ou "ajudá-la" conforme gênero */
+/** Retorna "ajudá-la", "ajudá-lo" ou "ajudar" (sem flexão) quando o gênero é desconhecido */
 export function ajudarSufixo(g: Genero): string {
-  return g === 'F' ? 'ajudá-la' : g === 'M' ? 'ajudá-lo' : 'ajudá-lo(a)';
+  return g === 'F' ? 'ajudá-la' : g === 'M' ? 'ajudá-lo' : 'ajudar';
 }
 
 // ─── Mensagens fixas com suporte a gênero ────────────────────────────────────
