@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { io as getIo } from '../server';
-import { getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley } from '../memory/db';
+import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -219,32 +219,34 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 }
 
 // Minutos de silencio do cliente antes de responder. Ajustavel por ambiente.
-// 10 minutos: tempo para o cliente terminar de contar o caso inteiro, em vez de
-// responder a um pedaço. Vale para TODAS as mensagens, inclusive as de urgência —
-// a decisão é responder uma vez, com o contexto completo.
-const JANELA_AGRUPAMENTO_MS = (parseInt(process.env.MINUTOS_AGRUPAMENTO || '') || 10) * 60 * 1000;
+const JANELA_AGRUPAMENTO_MIN = parseInt(process.env.MINUTOS_AGRUPAMENTO || '') || 10;
 
-interface JanelaConversa { textos: string[]; timer: NodeJS.Timeout | null; io: any; waName?: string }
-const janelas = new Map<string, JanelaConversa>();
+function agendarResposta(phone: string, texto: string, _io: any, waName?: string) {
+  acumularNaJanela(phone, texto, waName);
+  console.log(`[orchestrator] mensagem de ${phone} guardada; resposta apos ${JANELA_AGRUPAMENTO_MIN} min de silencio`);
+}
 
-function agendarResposta(phone: string, texto: string, io: any, waName?: string) {
-  const j: JanelaConversa = janelas.get(phone) || { textos: [], timer: null, io, waName };
-  if (texto && texto.trim()) j.textos.push(texto.trim());
-  j.io = io;
-  j.waName = waName || j.waName;
+// Verificacao periodica: responde as conversas em que o cliente ja parou de
+// falar. Fica em banco justamente para o reinicio do processo nao perder nada —
+// ao subir, a primeira passagem recolhe as janelas que venceram durante a queda.
+export async function processarJanelasVencidas(): Promise<void> {
+  let vencidas;
+  try {
+    vencidas = janelasVencidas(JANELA_AGRUPAMENTO_MIN);
+  } catch (err) {
+    console.error('[orchestrator] erro ao ler janelas vencidas:', err);
+    return;
+  }
+  if (!vencidas.length) return;
 
-  // Cada nova mensagem reinicia a contagem: enquanto o cliente fala, nao responde
-  if (j.timer) clearTimeout(j.timer);
-  j.timer = setTimeout(() => {
-    janelas.delete(phone);
-    const corpo = j.textos.join('\n');
-    console.log(`[orchestrator] janela fechada para ${phone} — ${j.textos.length} mensagem(ns) agrupada(s)`);
-    responderConversa(phone, corpo, j.io, j.waName).catch(err =>
-      console.error('[orchestrator] erro ao responder conversa agrupada:', err));
-  }, JANELA_AGRUPAMENTO_MS);
-
-  janelas.set(phone, j);
-  console.log(`[orchestrator] mensagem de ${phone} guardada; resposta em ate ${JANELA_AGRUPAMENTO_MS / 60000} min de silencio`);
+  for (const j of vencidas) {
+    // Remove ANTES de responder: se a redacao falhar, a janela nao fica presa
+    // repetindo a cada minuto
+    removerJanela(j.phone);
+    console.log(`[orchestrator] janela fechada para ${j.phone}`);
+    await responderConversa(j.phone, j.textos || '', getIo, j.wa_name || undefined)
+      .catch(err => console.error('[orchestrator] erro ao responder conversa agrupada:', err));
+  }
 }
 
 // Responde UMA vez o bloco de mensagens acumulado na janela

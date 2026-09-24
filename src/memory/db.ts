@@ -146,6 +146,18 @@ export async function initDb(): Promise<void> {
       updated_at INTEGER DEFAULT (unixepoch())
     );
 
+    -- Janela de agrupamento de mensagens do cliente. Ficava só na memória do
+    -- processo, e cada reinício (deploy) apagava as janelas abertas: as mensagens
+    -- continuavam salvas, mas nenhuma resposta era redigida — foi o que fez os
+    -- rascunhos sumirem numa sequência de seis deploys em uma hora. Em banco,
+    -- a janela sobrevive ao reinício e é retomada pela verificação periódica.
+    CREATE TABLE IF NOT EXISTS janelas_resposta (
+      phone TEXT PRIMARY KEY,
+      textos TEXT,
+      wa_name TEXT,
+      ultima_at INTEGER DEFAULT (unixepoch())
+    );
+
     -- Quais cards já foram vistos em cada lista, para saber quando um é NOVO —
     -- é o gatilho do primeiro aviso de audiência
     CREATE TABLE IF NOT EXISTS cards_vistos (
@@ -476,6 +488,33 @@ export function buscarContatoProcesso(processo: string, cardId: string): Contato
 
 export function listarContatosProcesso(): any[] {
   return getDb().prepare('SELECT * FROM contatos_processo ORDER BY updated_at DESC').all() as any[];
+}
+
+// ─── Janela de agrupamento, em banco para sobreviver a reinícios ──────────────
+
+// Guarda a mensagem e reinicia a contagem: enquanto o cliente fala, não responde
+export function acumularNaJanela(phone: string, texto: string, waName?: string) {
+  const t = String(texto || '').trim();
+  getDb().prepare(`
+    INSERT INTO janelas_resposta (phone, textos, wa_name, ultima_at)
+    VALUES (?, ?, ?, unixepoch())
+    ON CONFLICT(phone) DO UPDATE SET
+      textos = CASE WHEN ? = '' THEN janelas_resposta.textos
+                    ELSE TRIM(COALESCE(janelas_resposta.textos, '') || char(10) || ?) END,
+      wa_name = COALESCE(NULLIF(excluded.wa_name, ''), janelas_resposta.wa_name),
+      ultima_at = unixepoch()
+  `).run(phone, t, waName || '', t, t);
+}
+
+// Janelas em que o cliente já parou de falar há tempo suficiente
+export function janelasVencidas(minutos: number): Array<{ phone: string; textos: string; wa_name: string }> {
+  const limite = Math.floor(Date.now() / 1000) - minutos * 60;
+  return getDb().prepare('SELECT phone, textos, wa_name FROM janelas_resposta WHERE ultima_at <= ?')
+    .all(limite) as any[];
+}
+
+export function removerJanela(phone: string) {
+  getDb().prepare('DELETE FROM janelas_resposta WHERE phone = ?').run(phone);
 }
 
 // Primeira vez que este card aparece na lista? É o gatilho do aviso de audiência

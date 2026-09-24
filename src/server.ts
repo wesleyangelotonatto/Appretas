@@ -78,6 +78,15 @@ if (process.env.AVISOS_NAO_RESPONDIDOS === 'true') {
 }
 cron.schedule('0 22 * * *', () => cronResumosDiarios(), { timezone: TZ }); // todo dia às 22h — resumos + Drive + nota Waspeed
 cron.schedule('0 7 * * *', () => cronAusenciaPendentes(), { timezone: TZ }); // todo dia às 07h — entrega avisos de ausência pendentes
+// A cada minuto: responde as conversas cuja janela de agrupamento venceu. É o
+// que torna a janela resistente a reinício — ao subir, a primeira passagem
+// recolhe o que venceu enquanto o processo estava fora do ar.
+setInterval(() => {
+  import('./flow/orchestrator')
+    .then(m => m.processarJanelasVencidas())
+    .catch(err => console.error('[janelas] erro na verificação periódica:', err));
+}, 60 * 1000);
+
 cron.schedule('30 3 * * *', async () => {                                    // todo dia às 03h30 — limpa IDs de eventos antigos
   const { limparEventosAntigos } = await import('./memory/db');
   limparEventosAntigos();
