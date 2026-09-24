@@ -153,7 +153,8 @@
   <div class="modal" style="max-width:860px;width:94%;">
     <h3>Audiências/Prazos — confirmar antes de enviar</h3>
     <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
-      As datas vêm do card do Trello e nem sempre concordam entre si. Escolha a que vale, ajuste o texto se quiser, e só então envie. Nada sai sem a sua confirmação.
+      Prazos aparecem no próprio dia. Audiências aparecem três vezes: ao entrar na lista, uma semana antes e na véspera.
+      As datas vêm do card do Trello e nem sempre concordam entre si — escolha a que vale, ajuste o texto se quiser, e só então envie. Nada sai sem a sua confirmação.
     </p>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
       <label style="font-size:12px;color:var(--text-muted);">Próximos</label>
@@ -858,7 +859,8 @@
           '<strong>'+rotulo+'</strong> <span style="color:var(--text-muted);">['+escHtml(d.origem)+']</span> ' +
           '<span style="color:var(--text-muted);">'+escHtml((d.trecho||'').slice(0,70))+'</span></label>';
       }).join('');
-      const tipo = a.tipo === 'audiencia' ? 'AUDIÊNCIA' : 'PRAZO';
+      const rotuloMomento = {novo:'entrou na lista', semana:'falta 1 semana', vespera:'é amanhã', dia:'é hoje'}[a.momento] || '';
+      const tipo = (a.tipo === 'audiencia' ? 'AUDIÊNCIA' : 'PRAZO') + (rotuloMomento ? ' — ' + rotuloMomento.toUpperCase() : '');
       const semCadastro = !a.cadastrado;
       const alertaCadastro = semCadastro
         ? '<div style="background:#3d1a1a;border:1px solid #c0392b;color:#ff9a8f;padding:6px 8px;border-radius:6px;font-size:11px;margin:6px 0;">' +

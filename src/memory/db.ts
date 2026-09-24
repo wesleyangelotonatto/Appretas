@@ -125,6 +125,16 @@ export async function initDb(): Promise<void> {
       cadastrado INTEGER DEFAULT 1,     -- 0 = processo não está na planilha
       partes TEXT,                      -- "Fulano x Beltrano", tirado do card
       juizo TEXT,                       -- vara/comarca, quando o card informa
+      momento TEXT DEFAULT 'dia',       -- novo | semana | vespera (audiência) | dia (prazo)
+      created_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(card_id, tipo, momento)
+    );
+
+    -- Quais cards já foram vistos em cada lista, para saber quando um é NOVO —
+    -- é o gatilho do primeiro aviso de audiência
+    CREATE TABLE IF NOT EXISTS cards_vistos (
+      card_id TEXT,
+      tipo TEXT,
       created_at INTEGER DEFAULT (unixepoch()),
       UNIQUE(card_id, tipo)
     );
@@ -176,6 +186,7 @@ export async function initDb(): Promise<void> {
   garantirColuna('avisos_pendentes', 'cadastrado', 'INTEGER DEFAULT 1');
   garantirColuna('avisos_pendentes', 'partes', 'TEXT');
   garantirColuna('avisos_pendentes', 'juizo', 'TEXT');
+  migrarAvisosParaMomento();
 
   limparNomesContaminados();
   console.log('[db] banco inicializado:', DB_PATH);
@@ -357,6 +368,50 @@ export function registrarTipoEnviado(phone: string, tipo: string) {
   getDb().prepare('INSERT INTO tipos_enviados (phone, tipo) VALUES (?, ?)').run(phone, tipo);
 }
 
+// A tabela antiga tinha UNIQUE(card_id, tipo), o que permitia um aviso por card.
+// Uma audiência agora gera três (ao entrar na lista, uma semana antes e na
+// véspera), então a chave passa a incluir o momento. Alterar UNIQUE no SQLite
+// exige recriar a tabela; os avisos existentes são preservados.
+function migrarAvisosParaMomento() {
+  try {
+    const db = getDb();
+    const cols = db.prepare('PRAGMA table_info(avisos_pendentes)').all() as any[];
+    if (!cols.length || cols.some(c => c.name === 'momento')) return;
+
+    db.exec(`
+      ALTER TABLE avisos_pendentes RENAME TO avisos_pendentes_antiga;
+      CREATE TABLE avisos_pendentes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo TEXT, card_id TEXT, card_nome TEXT, processo TEXT,
+        phone TEXT, nome TEXT, datas_json TEXT, data_escolhida TEXT,
+        mensagem TEXT, status TEXT DEFAULT 'pendente',
+        cadastrado INTEGER DEFAULT 1, partes TEXT, juizo TEXT,
+        momento TEXT DEFAULT 'dia',
+        created_at INTEGER DEFAULT (unixepoch()),
+        UNIQUE(card_id, tipo, momento)
+      );
+      INSERT INTO avisos_pendentes
+        (id, tipo, card_id, card_nome, processo, phone, nome, datas_json,
+         data_escolhida, mensagem, status, cadastrado, partes, juizo, momento, created_at)
+      SELECT id, tipo, card_id, card_nome, processo, phone, nome, datas_json,
+             data_escolhida, mensagem, status, cadastrado, partes, juizo,
+             CASE WHEN tipo = 'prazo' THEN 'dia' ELSE 'novo' END, created_at
+      FROM avisos_pendentes_antiga;
+      DROP TABLE avisos_pendentes_antiga;
+    `);
+    console.log('[db] avisos_pendentes migrada para chave por momento');
+  } catch (err) {
+    console.error('[db] falha ao migrar avisos_pendentes:', err);
+  }
+}
+
+// Primeira vez que este card aparece na lista? É o gatilho do aviso de audiência
+// nova. Retorna true só na primeira chamada.
+export function registrarCardVisto(cardId: string, tipo: string): boolean {
+  const r = getDb().prepare('INSERT OR IGNORE INTO cards_vistos (card_id, tipo) VALUES (?, ?)').run(cardId, tipo);
+  return r.changes > 0;
+}
+
 // Acrescenta uma coluna a uma tabela já existente, se ela ainda não estiver lá
 function garantirColuna(tabela: string, coluna: string, definicao: string) {
   try {
@@ -373,7 +428,7 @@ function garantirColuna(tabela: string, coluna: string, definicao: string) {
 export function salvarAvisoPendente(a: {
   tipo: string; cardId: string; cardNome: string; processo: string;
   phone: string; nome: string; datasJson: string; mensagem: string; cadastrado: boolean;
-  partes?: string; juizo?: string;
+  partes?: string; juizo?: string; momento?: string;
 }): boolean {
   // UNIQUE(card_id, tipo) impede duplicar o que já está na fila. Mas o descarte
   // apenas marca a linha, e com INSERT OR IGNORE o card descartado nunca voltava
@@ -382,9 +437,9 @@ export function salvarAvisoPendente(a: {
   // fora, para o cliente não receber o mesmo aviso duas vezes.
   const r = getDb().prepare(`
     INSERT INTO avisos_pendentes
-      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado, partes, juizo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(card_id, tipo) DO UPDATE SET
+      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado, partes, juizo, momento)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(card_id, tipo, momento) DO UPDATE SET
       card_nome = excluded.card_nome, processo = excluded.processo,
       phone = excluded.phone, nome = excluded.nome,
       datas_json = excluded.datas_json, mensagem = excluded.mensagem,
@@ -392,7 +447,7 @@ export function salvarAvisoPendente(a: {
       status = 'pendente', data_escolhida = NULL, created_at = unixepoch()
     WHERE avisos_pendentes.status = 'descartado'
   `).run(a.tipo, a.cardId, a.cardNome, a.processo, a.phone, a.nome, a.datasJson, a.mensagem,
-         a.cadastrado ? 1 : 0, a.partes || '', a.juizo || '');
+         a.cadastrado ? 1 : 0, a.partes || '', a.juizo || '', a.momento || 'dia');
   return r.changes > 0;
 }
 

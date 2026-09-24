@@ -6,7 +6,7 @@
 import { getCardsAudiencias, getCardsPrazos } from '../integrations/trello';
 import { carregarPlanilha, acharPorProcesso } from '../lookup/sheets';
 import { coletarDatasDoCard, extrairNumeroProcesso, DataEncontrada } from './dadosCard';
-import { salvarAvisoPendente } from '../memory/db';
+import { salvarAvisoPendente, registrarCardVisto } from '../memory/db';
 
 const TZ = () => process.env.TZ_APP || 'America/Sao_Paulo';
 
@@ -31,11 +31,24 @@ export function formatarNomeProprio(texto: string): string {
     .join(' ');
 }
 
-// Só o primeiro nome no tratamento: "EDIVANDRO CARLOS MARQUES" -> "Edivandro"
+const MARCAS_EMPRESA = /\b(ltda|cia|s\/?a|eireli|me|epp|mei|associa[çc][ãa]o|cooperativa|banco|segurad|sicredi|sicoob)\b|&/i;
+
+// Só o primeiro nome no tratamento: "EDIVANDRO CARLOS MARQUES" -> "Edivandro".
+// Duas exceções: iniciais soltas ("J. LACHINSKI") não servem como tratamento, e
+// pessoa jurídica não tem primeiro nome — nesses casos usa o nome como está.
 export function primeiroNome(nome: string): string {
   const limpo = String(nome || '').trim();
   if (!limpo) return '';
-  return formatarNomeProprio(limpo.split(/\s+/)[0]);
+  if (MARCAS_EMPRESA.test(limpo)) return formatarNomeProprio(limpo).slice(0, 40);
+
+  const token = limpo.split(/\s+/).find(t => t.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 3);
+  if (!token) return formatarNomeProprio(limpo).slice(0, 40);
+  return formatarNomeProprio(token);
+}
+
+// "na 1ª Vara" mas "no Juizado": o artigo segue o gênero do termo
+export function artigoJuizo(juizo: string): string {
+  return new RegExp(`^(\\d+[ºª]?\\s+)?(${TERMOS_MASCULINOS})`, 'i').test(String(juizo || '').trim()) ? 'no' : 'na';
 }
 
 // Partes do processo a partir do título do card ("FULANO X BELTRANO")
@@ -68,30 +81,44 @@ export function extrairJuizo(texto: string): string {
   return achado ? normalizarOrdinais(formatarNomeProprio(achado)) : '';
 }
 
+export type Momento = 'novo' | 'semana' | 'vespera' | 'dia';
+
+// Abertura fixa definida por Wesley: identifica a Iara e explica POR QUE o
+// cliente está recebendo o aviso, em vez de uma mensagem solta sobre uma data.
+function aberturaPadrao(nome: string): string {
+  const tratamento = primeiroNome(nome) ? `Olá, ${primeiroNome(nome)}.` : 'Olá.';
+  return `${tratamento} Tudo bem? Aqui é a *Iara*, *secretária* do Doutor Wesley. ` +
+    `Ele sempre pede para atualizar sobre todos os andamentos do processo. Por isso, estou passando pra te avisar `;
+}
+
 export function montarMensagem(
   tipo: string,
   nome: string,
   dataIso: string,
   processo: string,
-  extras: { partes?: string; juizo?: string } = {}
+  extras: { partes?: string; juizo?: string; momento?: Momento } = {}
 ): string {
   const data = formatarData(dataIso);
   const hora = formatarHora(dataIso);
-  const tratamento = primeiroNome(nome) ? `Olá, ${primeiroNome(nome)}!` : 'Olá!';
-  const partes = extras.partes ? ` (${extras.partes})` : '';
-  const juizo = extras.juizo ? `, na ${extras.juizo},` : '';
+  // Nem todo card tem número de processo (recurso administrativo, multa) — sem
+  // partes nem número, a frase sai sem a identificação em vez de exibir um vazio
+  const partes = extras.partes ? ` (${extras.partes})` : (processo ? ` (${processo})` : '');
+  const juizo = extras.juizo ? `, ${artigoJuizo(extras.juizo)} ${extras.juizo},` : '';
+  const abertura = aberturaPadrao(nome);
 
   if (tipo === 'audiencia') {
-    // Meia-noite quase sempre significa que a hora não foi informada na fonte
-    const quando = hora === '00:00' ? `o dia ${data}` : `o dia ${data}, às ${hora}`;
-    return `${tratamento} Passando para lembrar que a audiência do seu processo${partes}${juizo} está marcada para ${quando}. ` +
-      `Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.`;
+    // Meia-noite quase sempre significa que a fonte não informou a hora
+    const comHora = hora === '00:00' ? '' : `, às ${hora}`;
+    const corpo =
+      extras.momento === 'vespera'
+        ? `que a audiência do seu processo${partes}${juizo} é amanhã, dia ${data}${comHora}.`
+        : extras.momento === 'semana'
+        ? `que a audiência do seu processo${partes}${juizo} acontece na próxima semana, no dia ${data}${comHora}.`
+        : `que foi marcada uma audiência no seu processo${partes}${juizo} para o dia ${data}${comHora}.`;
+    return `${abertura}${corpo} Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.`;
   }
 
-  // Nem todo card tem número de processo (recurso administrativo, multa) — sem
-  // ele a mensagem sai sem o parêntese, em vez de mostrar um vazio ao cliente
-  const referencia = extras.partes ? ` ${extras.partes}` : (processo ? ` (${processo})` : '');
-  return `${tratamento} Passando para avisar que temos um prazo a cumprir no seu processo${referencia}${juizo} até ${data}. ` +
+  return `${abertura}que hoje vamos cumprir um prazo no seu processo${partes}${juizo}. ` +
     `Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.`;
 }
 
@@ -116,9 +143,20 @@ export interface ResultadoVarredura {
   semData: Array<{ card: string }>;
 }
 
-export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVarredura> {
-  const agora = Date.now();
-  const limite = agora + dias * 86400000;
+// Dia do calendário em São Paulo, para comparar datas sem erro de fuso
+function diaSP(iso: string | number): string {
+  return new Date(iso).toLocaleDateString('sv-SE', { timeZone: TZ() });
+}
+
+function somarDias(base: Date, dias: number): string {
+  return diaSP(base.getTime() + dias * 86400000);
+}
+
+export async function gerarAvisosParaConfirmacao(_dias = 15): Promise<ResultadoVarredura> {
+  const hoje = new Date();
+  const diaHoje = diaSP(hoje.getTime());
+  const diaAmanha = somarDias(hoje, 1);
+  const diaSemana = somarDias(hoje, 7);
   const planilha = await carregarPlanilha();
 
   const res: ResultadoVarredura = { criados: 0, semCadastro: [], semData: [] };
@@ -127,18 +165,38 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
     const cards = await buscar();
 
     for (const card of cards) {
+      const cardId = String(card.id || '');
+      // Primeiro avistamento do card na lista — gatilho do aviso de audiência nova.
+      // Precisa ser registrado antes de qualquer filtro de data, senão um card
+      // sem data ainda seria dado como novo de novo na varredura seguinte.
+      const cardNovo = registrarCardVisto(cardId, tipo);
+
       const datas: DataEncontrada[] = await coletarDatasDoCard(card);
-      const naJanela = datas.filter(d => {
-        const t = new Date(d.dataIso).getTime();
-        return t >= agora - 86400000 && t <= limite;
-      });
-      if (!naJanela.length) continue;
+      if (!datas.length) {
+        res.semData.push({ card: String(card.name || '').slice(0, 90) });
+        continue;
+      }
+
+      // PRAZO: só avisa no próprio dia do prazo.
+      // AUDIÊNCIA: ao entrar na lista, uma semana antes e na véspera.
+      const momentos: Array<{ momento: Momento; dataIso: string }> = [];
+      if (tipo === 'prazo') {
+        const hojeData = datas.find(d => diaSP(d.dataIso) === diaHoje);
+        if (hojeData) momentos.push({ momento: 'dia', dataIso: hojeData.dataIso });
+      } else {
+        const futuras = datas.filter(d => diaSP(d.dataIso) >= diaHoje);
+        if (cardNovo && futuras.length) momentos.push({ momento: 'novo', dataIso: futuras[0].dataIso });
+        const daquiUmaSemana = datas.find(d => diaSP(d.dataIso) === diaSemana);
+        if (daquiUmaSemana) momentos.push({ momento: 'semana', dataIso: daquiUmaSemana.dataIso });
+        const vespera = datas.find(d => diaSP(d.dataIso) === diaAmanha);
+        if (vespera) momentos.push({ momento: 'vespera', dataIso: vespera.dataIso });
+      }
+      if (!momentos.length) continue;
 
       // Card sem número de processo (recurso administrativo, multa de trânsito)
       // também entra: está numa das listas, então é trabalho a avisar. Só não
       // tem como ser procurado na planilha.
       const processo = extrairNumeroProcesso(`${card.name || ''} ${card.desc || ''}`) || '';
-      if (!processo) res.semData.push({ card: String(card.name || '').slice(0, 90) });
 
       // Sem cadastro na planilha o aviso ENTRA na fila do mesmo jeito, marcado
       // para Wesley completar o contato — deixar de fora escondia justamente os
@@ -154,22 +212,23 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
       const partes = extrairPartes(card.name || '');
       const juizo = extrairJuizo(`${card.name || ''} - ${card.desc || ''}`);
 
-      // Sugere a data mais próxima, mas todas vão para a tela — Wesley escolhe
-      const sugerida = naJanela[0].dataIso;
-      const criado = salvarAvisoPendente({
-        tipo,
-        cardId: String(card.id || ''),
-        cardNome: String(card.name || '').slice(0, 200),
-        processo,
-        phone,
-        nome,
-        datasJson: JSON.stringify(naJanela),
-        mensagem: montarMensagem(tipo, nome, sugerida, processo, { partes, juizo }),
-        cadastrado,
-        partes,
-        juizo,
-      });
-      if (criado) res.criados++;
+      for (const { momento, dataIso } of momentos) {
+        const criado = salvarAvisoPendente({
+          tipo,
+          cardId,
+          cardNome: String(card.name || '').slice(0, 200),
+          processo,
+          phone,
+          nome,
+          datasJson: JSON.stringify(datas),
+          mensagem: montarMensagem(tipo, nome, dataIso, processo, { partes, juizo, momento }),
+          cadastrado,
+          partes,
+          juizo,
+          momento,
+        });
+        if (criado) res.criados++;
+      }
     }
   }
 
