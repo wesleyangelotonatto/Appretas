@@ -219,7 +219,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 }
 
 // Minutos de silencio do cliente antes de responder. Ajustavel por ambiente.
-const JANELA_AGRUPAMENTO_MS = (parseInt(process.env.MINUTOS_AGRUPAMENTO || '') || 5) * 60 * 1000;
+// 10 minutos: tempo para o cliente terminar de contar o caso inteiro, em vez de
+// responder a um pedaço. Vale para TODAS as mensagens, inclusive as de urgência —
+// a decisão é responder uma vez, com o contexto completo.
+const JANELA_AGRUPAMENTO_MS = (parseInt(process.env.MINUTOS_AGRUPAMENTO || '') || 10) * 60 * 1000;
 
 interface JanelaConversa { textos: string[]; timer: NodeJS.Timeout | null; io: any; waName?: string }
 const janelas = new Map<string, JanelaConversa>();
