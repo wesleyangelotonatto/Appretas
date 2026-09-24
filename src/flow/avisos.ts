@@ -34,9 +34,24 @@ export function montarMensagem(tipo: string, nome: string, dataIso: string, proc
     `Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.`;
 }
 
+// Palpite do nome do cliente a partir do título do card, para os processos que
+// ainda não estão na planilha. O título costuma ser
+// "<número> - <PARTE> X <PARTE CONTRÁRIA> - <assunto>", e a primeira parte
+// costuma ser o cliente. É só sugestão: o nome fica editável na tela.
+export function nomeSugeridoDoCard(titulo: string): string {
+  let t = String(titulo || '').replace(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g, '').replace(/\d{20}/g, '');
+  t = t.replace(/^[\s\-–—]+/, '');
+  // Descarta trechos curtos do começo: costumam ser a classe processual
+  // ("ATOrd", "AI"), não o nome do cliente
+  const segmentos = t.split(/\s+[-–—]\s+/).map(x => x.trim()).filter(Boolean);
+  const util = segmentos.find(x => x.replace(/[^A-Za-zÀ-ÿ]/g, '').length >= 6) || segmentos[0] || t;
+  const primeiraParte = util.split(/\s+[xX]\s+/)[0] || util;
+  return primeiraParte.replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
 export interface ResultadoVarredura {
   criados: number;
-  semCliente: Array<{ card: string; processo: string }>;
+  semCadastro: Array<{ card: string; processo: string }>;
   semData: Array<{ card: string }>;
 }
 
@@ -45,7 +60,7 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
   const limite = agora + dias * 86400000;
   const planilha = await carregarPlanilha();
 
-  const res: ResultadoVarredura = { criados: 0, semCliente: [], semData: [] };
+  const res: ResultadoVarredura = { criados: 0, semCadastro: [], semData: [] };
 
   for (const [tipo, buscar] of [['audiencia', getCardsAudiencias], ['prazo', getCardsPrazos]] as const) {
     const cards = await buscar();
@@ -64,11 +79,14 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
         continue;
       }
 
+      // Sem cadastro na planilha o aviso ENTRA na fila do mesmo jeito, marcado
+      // para Wesley completar o contato — deixar de fora escondia justamente os
+      // processos que precisam de cadastro, e ele fica sem saber que existem.
       const cliente = acharPorProcesso(planilha, processo);
-      if (!cliente || !cliente.phone) {
-        res.semCliente.push({ card: String(card.name || '').slice(0, 90), processo });
-        continue;
-      }
+      const cadastrado = !!(cliente && cliente.phone);
+      const nome = cadastrado ? cliente!.name : nomeSugeridoDoCard(card.name || '');
+      const phone = cadastrado ? cliente!.phone : '';
+      if (!cadastrado) res.semCadastro.push({ card: String(card.name || '').slice(0, 90), processo });
 
       // Sugere a data mais próxima, mas todas vão para a tela — Wesley escolhe
       const sugerida = naJanela[0].dataIso;
@@ -77,10 +95,11 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
         cardId: String(card.id || ''),
         cardNome: String(card.name || '').slice(0, 200),
         processo,
-        phone: cliente.phone,
-        nome: cliente.name,
+        phone,
+        nome,
         datasJson: JSON.stringify(naJanela),
-        mensagem: montarMensagem(tipo, cliente.name, sugerida, processo),
+        mensagem: montarMensagem(tipo, nome, sugerida, processo),
+        cadastrado,
       });
       if (criado) res.criados++;
     }

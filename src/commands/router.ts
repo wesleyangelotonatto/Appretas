@@ -8,7 +8,7 @@ import {
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
   getActiveConversations, getRecentCorrections, getGroups, setGroupActive,
   salvarTreinamento, listarTreinamento, contarTreinamento,
-  listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado,
+  listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, atualizarContatoAviso,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -168,20 +168,42 @@ commandRouter.post('/avisos/:id/aprovar', async (req: Request, res: Response) =>
     const texto = String(mensagem || aviso.mensagem || '').trim();
     if (!texto) return res.status(400).json({ error: 'Mensagem vazia' });
 
-    await sendMessage(aviso.phone, texto);
+    // Nos processos fora da planilha o telefone chega vazio: sem ele não há
+    // para quem enviar, e mandar para um número em branco seria pior que falhar
+    const destino = String(req.body?.phone || aviso.phone || '').replace(/[^0-9]/g, '');
+    if (destino.length < 10) {
+      return res.status(400).json({ error: 'Informe o telefone do cliente (DDD + número) antes de enviar' });
+    }
+    if (destino !== aviso.phone || req.body?.nome) {
+      atualizarContatoAviso(id, String(req.body?.nome || aviso.nome || ''), destino);
+    }
+
+    await sendMessage(destino, texto);
     marcarAvisoEnviado(id, String(dataIso || ''), texto);
 
     // Em calibragem o envio é interceptado e guardado no banco de treinamento,
     // então nada chega ao cliente e o histórico real não recebe a mensagem
     if (!modoCalibragem()) {
-      saveMessage(aviso.phone, 'iara', texto);
-      req.app.locals.io?.emit('message', { phone: aviso.phone, role: 'iara', body: texto, timestamp: Date.now() });
+      saveMessage(destino, 'iara', texto);
+      req.app.locals.io?.emit('message', { phone: destino, role: 'iara', body: texto, timestamp: Date.now() });
     }
     req.app.locals.io?.emit('avisos_update', {});
     res.json({ ok: true, calibragem: modoCalibragem() });
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
+});
+
+// POST /command/avisos/:id/contato — salva nome e telefone corrigidos na tela
+commandRouter.post('/avisos/:id/contato', (req: Request, res: Response) => {
+  const { nome, phone, mensagem } = req.body || {};
+  const limpo = String(phone || '').replace(/[^0-9]/g, '');
+  if (limpo && (limpo.length < 10 || limpo.length > 13)) {
+    return res.status(400).json({ error: 'Telefone deve ter DDD + número (10 a 13 dígitos)' });
+  }
+  atualizarContatoAviso(parseInt(req.params.id), String(nome || ''), limpo, mensagem);
+  req.app.locals.io?.emit('avisos_update', {});
+  res.json({ ok: true, phone: limpo });
 });
 
 commandRouter.post('/avisos/:id/descartar', (req: Request, res: Response) => {

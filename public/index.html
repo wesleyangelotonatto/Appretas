@@ -854,27 +854,83 @@
           '<span style="color:var(--text-muted);">'+escHtml((d.trecho||'').slice(0,70))+'</span></label>';
       }).join('');
       const tipo = a.tipo === 'audiencia' ? 'AUDIÊNCIA' : 'PRAZO';
-      return '<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--surface);">' +
-        '<div style="font-size:11px;color:var(--blue);font-weight:600;">'+tipo+'</div>' +
-        '<div style="font-size:13px;margin:2px 0;"><strong>'+escHtml(a.nome||'(sem nome)')+'</strong> — '+escHtml(a.phone)+'</div>' +
-        '<div style="font-size:11px;color:var(--text-muted);">'+escHtml(a.card_nome||'')+'</div>' +
+      const semCadastro = !a.cadastrado;
+      const alertaCadastro = semCadastro
+        ? '<div style="background:#3d1a1a;border:1px solid #c0392b;color:#ff9a8f;padding:6px 8px;border-radius:6px;font-size:11px;margin:6px 0;">' +
+          'Processo <strong>não cadastrado</strong> na planilha. O nome abaixo e so um palpite tirado do card e o telefone esta em branco: ' +
+          'preencha para poder enviar, e lembre de cadastrar este processo na planilha.</div>'
+        : '';
+      const inputStyle = 'background:var(--surface2);border:1px solid '+(semCadastro?'#c0392b':'var(--border)')+';color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;';
+      return '<div style="border:1px solid '+(semCadastro?'#c0392b':'var(--border)')+';border-radius:8px;padding:10px;margin-bottom:10px;background:var(--surface);">' +
+        '<div style="font-size:11px;color:var(--blue);font-weight:600;">'+tipo+(semCadastro?' — SEM CADASTRO':'')+'</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">'+escHtml(a.card_nome||'')+'</div>' +
+        alertaCadastro +
+        '<div style="display:flex;gap:8px;margin:6px 0;">' +
+          '<input id="nome-'+a.id+'" value="'+escHtml(a.nome||'')+'" placeholder="Nome para tratar" style="flex:2;'+inputStyle+'">' +
+          '<input id="fone-'+a.id+'" value="'+escHtml(a.phone||'')+'" placeholder="Telefone com DDD" style="flex:1;'+inputStyle+'">' +
+          '<button class="btn" style="background:var(--surface2);font-size:11px;" onclick="salvarContatoAviso('+a.id+')">Salvar contato</button>' +
+        '</div>' +
         alerta +
         '<div style="margin:6px 0;">'+opcoes+'</div>' +
         '<textarea id="msg-'+a.id+'" rows="4" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font-size:13px;">'+escHtml(a.mensagem||'')+'</textarea>' +
-        '<div style="display:flex;gap:8px;margin-top:6px;">' +
+        '<div style="display:flex;gap:8px;margin-top:6px;align-items:center;">' +
           '<button class="btn btn-followup" onclick="aprovarAviso('+a.id+')">Confirmar e Enviar</button>' +
+          '<button class="btn" style="background:var(--surface2);font-size:11px;" onclick="refazerMensagem('+a.id+')">Refazer texto com a data escolhida</button>' +
           '<button class="btn" style="background:#c0392b;color:#fff" onclick="descartarAviso('+a.id+')">Descartar</button>' +
         '</div></div>';
     }).join('');
   }
 
+  async function salvarContatoAviso(id) {
+    const nome = document.getElementById('nome-'+id).value.trim();
+    const phone = document.getElementById('fone-'+id).value.trim();
+    const mensagem = document.getElementById('msg-'+id).value;
+    const r = await fetch('/command/avisos/'+id+'/contato', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ nome, phone, mensagem })
+    });
+    const d = await r.json();
+    document.getElementById('avisos-status').textContent = d.error
+      ? ('Erro: ' + d.error)
+      : ('Contato salvo: ' + nome + ' / ' + (d.phone || 'sem telefone'));
+  }
+
+  // Reescreve o texto usando a data que esta marcada agora, sem perder as edicoes
+  // de nome — util quando Wesley troca a data escolhida depois de ler os trechos
+  function refazerMensagem(id) {
+    const a = avisos.find(x => x.id === id);
+    const sel = document.querySelector('input[name="data-'+id+'"]:checked');
+    if (!a || !sel) return;
+    const nome = document.getElementById('nome-'+id).value.trim();
+    const dt = new Date(sel.value);
+    const data = dt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
+    const hora = dt.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
+    const trat = nome ? ('Olá, ' + nome + '!') : 'Olá!';
+    let txt;
+    if (a.tipo === 'audiencia') {
+      const quando = hora === '00:00' ? ('o dia ' + data) : ('o dia ' + data + ', às ' + hora);
+      txt = trat + ' Passando para lembrar que a audiência do seu processo está marcada para ' + quando +
+            '. Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.';
+    } else {
+      txt = trat + ' Passando para avisar que temos um prazo a cumprir no seu processo (' + a.processo +
+            ') até ' + data + '. Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.';
+    }
+    document.getElementById('msg-'+id).value = txt;
+  }
+
   async function aprovarAviso(id) {
     const sel = document.querySelector('input[name="data-'+id+'"]:checked');
     const msg = document.getElementById('msg-'+id).value;
+    const nome = document.getElementById('nome-'+id).value.trim();
+    const phone = document.getElementById('fone-'+id).value.trim();
     const r = await (await fetch('/command/avisos/'+id+'/aprovar', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ dataIso: sel ? sel.value : '', mensagem: msg })
+      body: JSON.stringify({ dataIso: sel ? sel.value : '', mensagem: msg, nome, phone })
     })).json();
+    if (r.error) {
+      document.getElementById('avisos-status').textContent = 'Erro: ' + r.error;
+      return;
+    }
     if (r.calibragem) {
       document.getElementById('avisos-status').textContent = 'Modo calibragem: guardado para treinamento, nada foi enviado ao cliente.';
     }

@@ -122,6 +122,7 @@ export async function initDb(): Promise<void> {
       data_escolhida TEXT,       -- a que Wesley confirmou
       mensagem TEXT,
       status TEXT DEFAULT 'pendente',   -- pendente | enviado | descartado
+      cadastrado INTEGER DEFAULT 1,     -- 0 = processo não está na planilha
       created_at INTEGER DEFAULT (unixepoch()),
       UNIQUE(card_id, tipo)
     );
@@ -307,15 +308,26 @@ export function limparTreinamento(): number {
 
 export function salvarAvisoPendente(a: {
   tipo: string; cardId: string; cardNome: string; processo: string;
-  phone: string; nome: string; datasJson: string; mensagem: string;
+  phone: string; nome: string; datasJson: string; mensagem: string; cadastrado: boolean;
 }): boolean {
   // UNIQUE(card_id, tipo): reexecutar a varredura não duplica o que já está na fila
   const r = getDb().prepare(`
     INSERT OR IGNORE INTO avisos_pendentes
-      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(a.tipo, a.cardId, a.cardNome, a.processo, a.phone, a.nome, a.datasJson, a.mensagem);
+      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(a.tipo, a.cardId, a.cardNome, a.processo, a.phone, a.nome, a.datasJson, a.mensagem,
+         a.cadastrado ? 1 : 0);
   return r.changes > 0;
+}
+
+// Wesley corrige nome e telefone direto na tela — principalmente nos processos
+// que ainda não estão na planilha, onde o nome é só um palpite tirado do card
+export function atualizarContatoAviso(id: number, nome: string, phone: string, mensagem?: string) {
+  const campos = mensagem !== undefined
+    ? 'nome = ?, phone = ?, mensagem = ?'
+    : 'nome = ?, phone = ?';
+  const args: any[] = mensagem !== undefined ? [nome, phone, mensagem, id] : [nome, phone, id];
+  getDb().prepare(`UPDATE avisos_pendentes SET ${campos} WHERE id = ?`).run(...args);
 }
 
 export function listarAvisosPendentes(): any[] {
