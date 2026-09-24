@@ -202,10 +202,20 @@ export async function initDb(): Promise<void> {
       pending INTEGER DEFAULT 0
     );
 
+    CREATE TABLE IF NOT EXISTS resumos_diarios (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      name TEXT,
+      data_str TEXT NOT NULL,   -- 'YYYY-MM-DD' (data de São Paulo)
+      resumo TEXT NOT NULL,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
     CREATE INDEX IF NOT EXISTS idx_fup2_next ON follow_ups_v2(next_send_at, status);
+    CREATE INDEX IF NOT EXISTS idx_resumos_data ON resumos_diarios(data_str);
   `);
 
   // CREATE TABLE IF NOT EXISTS não altera tabela que já existe: uma coluna nova
@@ -804,6 +814,28 @@ export function purgeOldMessages(days = 90) {
 }
 
 // ─── Settings (modo ausência, etc.) ──────────────────────────────────────────
+
+export function salvarResumoDiario(phone: string, name: string, dataStr: string, resumo: string) {
+  getDb().prepare(`
+    INSERT OR REPLACE INTO resumos_diarios (phone, name, data_str, resumo)
+    VALUES (?, ?, ?, ?)
+  `).run(phone, name, dataStr, resumo);
+}
+
+export function getResumosDoDia(dataStr: string): Array<{ phone: string; name: string | null; resumo: string; created_at: number }> {
+  return getDb().prepare(`
+    SELECT phone, name, resumo, created_at
+    FROM resumos_diarios
+    WHERE data_str = ?
+    ORDER BY name
+  `).all(dataStr) as any[];
+}
+
+export function getDatasComResumo(): string[] {
+  return (getDb().prepare(`
+    SELECT DISTINCT data_str FROM resumos_diarios ORDER BY data_str DESC LIMIT 60
+  `).all() as any[]).map((r: any) => r.data_str);
+}
 
 export function getSetting(key: string): string | null {
   const row = getDb().prepare('SELECT value FROM settings WHERE key = ?').get(key) as any;

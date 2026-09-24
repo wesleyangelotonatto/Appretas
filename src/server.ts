@@ -12,7 +12,8 @@ import { cronAudiencias } from './cron/audiencias';
 import { cronPrazos } from './cron/prazos';
 import { cronFollowUps } from './cron/followups';
 import { cronNaoRespondidos } from './cron/naorespondidos';
-import { cronResumosDiarios } from './cron/resumos';
+import { cronResumosDiarios, cronRelatorioWesley } from './cron/resumos';
+import { getResumosDoDia, getDatasComResumo } from './memory/db';
 import { cronAusenciaPendentes } from './cron/ausencia';
 
 const PORT = process.env.PORT || 3000;
@@ -40,6 +41,28 @@ app.locals.io = io;
 // Rotas
 app.use('/webhook', webhookRouter);
 app.use('/command', commandRouter);
+
+// Relatórios diários — consulta pelo painel
+app.get('/api/resumos/datas', (_req, res) => {
+  try {
+    res.json(getDatasComResumo());
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar datas' });
+  }
+});
+
+app.get('/api/resumos/:data', (req, res) => {
+  try {
+    const data = req.params.data; // formato YYYY-MM-DD
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) {
+      res.status(400).json({ error: 'Formato inválido. Use YYYY-MM-DD' });
+      return;
+    }
+    res.json(getResumosDoDia(data));
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao buscar resumos' });
+  }
+});
 
 app.get('/health', (_req, res) => res.json({
   status: 'ok',
@@ -77,6 +100,7 @@ if (process.env.AVISOS_NAO_RESPONDIDOS === 'true') {
   console.log('[iara] avisos de não-respondidos: DESLIGADOS (nenhum envio automático)');
 }
 cron.schedule('0 22 * * *', () => cronResumosDiarios(), { timezone: TZ }); // todo dia às 22h — resumos + Drive + nota Waspeed
+cron.schedule('0 21 * * *', () => cronRelatorioWesley(), { timezone: TZ }); // todo dia às 21h — relatório consolidado para Wesley
 cron.schedule('0 7 * * *', () => cronAusenciaPendentes(), { timezone: TZ }); // todo dia às 07h — entrega avisos de ausência pendentes
 // A cada minuto: responde as conversas cuja janela de agrupamento venceu. É o
 // que torna a janela resistente a reinício — ao subir, a primeira passagem

@@ -1,7 +1,9 @@
-import { getDb } from '../memory/db';
-import { createNote } from '../responder/send';
+import { getDb, salvarResumoDiario, getResumosDoDia } from '../memory/db';
+import { createNote, sendMessage } from '../responder/send';
 import { saveConversationSummary } from '../integrations/drive';
 import Anthropic from '@anthropic-ai/sdk';
+
+const PHONE_WESLEY = process.env.PHONE_WESLEY || '5544999110862';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -135,6 +137,11 @@ Tom da conversa: [ex.: urgente, informativo, agradecido, tenso, rotineiro]`,
   ].join('\n');
 }
 
+function hojeStr(): string {
+  const sp = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
+  return `${sp.getFullYear()}-${String(sp.getMonth() + 1).padStart(2, '0')}-${String(sp.getDate()).padStart(2, '0')}`;
+}
+
 export async function cronResumosDiarios(): Promise<void> {
   const contatos = getPhonesComConversaHoje();
   if (!contatos.length) {
@@ -142,6 +149,7 @@ export async function cronResumosDiarios(): Promise<void> {
     return;
   }
 
+  const dataHoje = hojeStr();
   let salvos = 0;
   let erros = 0;
 
@@ -158,6 +166,9 @@ export async function cronResumosDiarios(): Promise<void> {
       // 2. Salvar no Drive na pasta do cliente
       await saveConversationSummary(phone, name || phone, resumo);
 
+      // 3. Salvar no banco para consulta pelo painel
+      salvarResumoDiario(phone, name || phone, dataHoje, resumo);
+
       console.log(`[cron-resumos] salvo para ${name || phone} (${phone})`);
       salvos++;
     } catch (err) {
@@ -167,4 +178,41 @@ export async function cronResumosDiarios(): Promise<void> {
   }
 
   console.log(`[cron-resumos] ${salvos} resumo(s) salvo(s), ${erros} erro(s)`);
+}
+
+// Envia às 21h um resumo consolidado do dia para o número do Dr. Wesley
+export async function cronRelatorioWesley(): Promise<void> {
+  const dataHoje = hojeStr();
+  const resumos = getResumosDoDia(dataHoje);
+  if (!resumos.length) {
+    console.log('[cron-relatorio] nenhum resumo disponível para hoje');
+    return;
+  }
+
+  const [dia, mes, ano] = dataHoje.split('-').reverse();
+  const linhas = resumos.map((r, i) => {
+    // Extrai assunto principal e tom da conversa do texto estruturado
+    const assunto = r.resumo.match(/Assunto principal:\s*(.+)/i)?.[1]?.trim() || '—';
+    const tom = r.resumo.match(/Tom da conversa:\s*(.+)/i)?.[1]?.trim() || '';
+    const pendencia = r.resumo.match(/Pendências:\s*(.+)/i)?.[1]?.trim() || '';
+    const tomStr = tom && tom.toLowerCase() !== 'nenhuma' ? ` (${tom})` : '';
+    const pendStr = pendencia && pendencia.toLowerCase() !== 'nenhuma' ? ` | Pendente: ${pendencia}` : '';
+    return `${i + 1}. ${r.name || r.phone} — ${assunto}${tomStr}${pendStr}`;
+  });
+
+  const texto = [
+    `RELATÓRIO DO DIA — ${dia}/${mes}/${ano}`,
+    `${resumos.length} conversa(s) registrada(s)`,
+    '',
+    ...linhas,
+    '',
+    'Resumos detalhados disponíveis no painel.',
+  ].join('\n');
+
+  try {
+    await sendMessage(PHONE_WESLEY, texto, { assinar: false });
+    console.log(`[cron-relatorio] relatório enviado para ${PHONE_WESLEY} (${resumos.length} contatos)`);
+  } catch (err) {
+    console.error('[cron-relatorio] erro ao enviar relatório:', err);
+  }
 }
