@@ -164,7 +164,7 @@
     </div>
     <div id="avisos-list" style="max-height:60vh;overflow-y:auto;"></div>
     <div class="modal-actions">
-      <button class="btn" style="background:var(--surface2)" onclick="document.getElementById('modal-avisos').classList.remove('active')">Fechar</button>
+      <button class="btn" style="background:var(--surface2)" onclick="document.getElementById('modal-avisos').classList.remove('open')">Fechar</button>
     </div>
   </div>
 </div>
@@ -815,7 +815,7 @@
   }
 
   function abrirAvisos() {
-    document.getElementById('modal-avisos').classList.add('active');
+    document.getElementById('modal-avisos').classList.add('open');
     carregarAvisos();
   }
 
