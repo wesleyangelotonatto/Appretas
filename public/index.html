@@ -1145,15 +1145,22 @@
       lista.innerHTML = resumos.map(res => {
         const assunto = (res.resumo.match(/Assunto principal:\s*(.+)/i)||[])[1]?.trim() || '—';
         const tom = (res.resumo.match(/Tom da conversa:\s*(.+)/i)||[])[1]?.trim() || '';
+        // Link direto para a conversa no WhatsApp Web (número sem o + inicial)
+        const waNum = res.phone.replace(/\D/g, '');
+        const waLink = `https://wa.me/${waNum}`;
         return `
           <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:12px;overflow:hidden;">
             <div style="background:var(--surface2);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;"
                  onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
-              <div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
                 <span style="font-weight:600;font-size:13px;">${escHtml(res.name || res.phone)}</span>
-                <span style="color:var(--text-muted);font-size:12px;margin-left:10px;">${escHtml(assunto)}</span>
+                <a href="${waLink}" target="_blank" onclick="event.stopPropagation()"
+                   style="font-size:11px;color:#25d366;background:#0a2d10;padding:2px 8px;border-radius:12px;border:1px solid #25d366;text-decoration:none;white-space:nowrap;">
+                  📱 ${waNum}
+                </a>
+                <span style="color:var(--text-muted);font-size:12px;">${escHtml(assunto)}</span>
               </div>
-              ${tom ? `<span style="font-size:11px;color:var(--text-muted);background:var(--surface);padding:2px 8px;border-radius:12px;">${escHtml(tom)}</span>` : ''}
+              ${tom ? `<span style="font-size:11px;color:var(--text-muted);background:var(--surface);padding:2px 8px;border-radius:12px;flex-shrink:0;">${escHtml(tom)}</span>` : ''}
             </div>
             <div style="display:none;padding:14px;background:var(--surface);font-size:12px;white-space:pre-wrap;line-height:1.7;color:var(--text-muted);">${escHtml(res.resumo)}</div>
           </div>`;
