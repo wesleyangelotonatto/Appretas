@@ -9,6 +9,7 @@ import {
   getActiveConversations, getRecentCorrections, getCorrectionsComContato, getGroups, setGroupActive,
   salvarTreinamento, listarTreinamento, contarTreinamento,
   listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, descartarTodosAvisos, atualizarContatoAviso,
+  salvarContatoProcesso, listarContatosProcesso,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -177,6 +178,11 @@ commandRouter.post('/avisos/:id/aprovar', async (req: Request, res: Response) =>
     if (destino !== aviso.phone || req.body?.nome) {
       atualizarContatoAviso(id, String(req.body?.nome || aviso.nome || ''), destino);
     }
+    // Aprender o contato vale também ao aprovar, não só ao clicar em salvar
+    salvarContatoProcesso({
+      processo: aviso.processo, cardId: aviso.card_id,
+      nome: String(req.body?.nome || aviso.nome || ''), phone: destino,
+    });
 
     await sendMessage(destino, texto);
     marcarAvisoEnviado(id, String(dataIso || ''), texto);
@@ -201,7 +207,11 @@ commandRouter.post('/avisos/:id/contato', (req: Request, res: Response) => {
   if (limpo && (limpo.length < 10 || limpo.length > 13)) {
     return res.status(400).json({ error: 'Telefone deve ter DDD + número (10 a 13 dígitos)' });
   }
-  atualizarContatoAviso(parseInt(req.params.id), String(nome || ''), limpo, mensagem);
+  const id = parseInt(req.params.id);
+  atualizarContatoAviso(id, String(nome || ''), limpo, mensagem);
+  // Guarda por processo: na próxima varredura o contato já vem preenchido
+  const aviso = getAvisoPendente(id);
+  if (aviso) salvarContatoProcesso({ processo: aviso.processo, cardId: aviso.card_id, nome: String(nome || ''), phone: limpo });
   req.app.locals.io?.emit('avisos_update', {});
   res.json({ ok: true, phone: limpo });
 });
@@ -217,6 +227,11 @@ commandRouter.post('/avisos/:id/descartar', (req: Request, res: Response) => {
   marcarAvisoDescartado(parseInt(req.params.id));
   req.app.locals.io?.emit('avisos_update', {});
   res.json({ ok: true });
+});
+
+// GET /command/contatos-processo — o que já foi aprendido na tela de avisos
+commandRouter.get('/contatos-processo', (_req, res) => {
+  res.json(listarContatosProcesso());
 });
 
 // GET /command/diagnostico-cards — percorre as listas de audiências e prazos e

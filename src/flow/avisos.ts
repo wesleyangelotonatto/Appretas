@@ -6,7 +6,7 @@
 import { getCardsAudiencias, getCardsPrazos } from '../integrations/trello';
 import { carregarPlanilha, acharPorProcesso } from '../lookup/sheets';
 import { coletarDatasDoCard, extrairNumeroProcesso, DataEncontrada } from './dadosCard';
-import { salvarAvisoPendente, registrarCardVisto } from '../memory/db';
+import { salvarAvisoPendente, registrarCardVisto, buscarContatoProcesso } from '../memory/db';
 
 const TZ = () => process.env.TZ_APP || 'America/Sao_Paulo';
 
@@ -201,10 +201,16 @@ export async function gerarAvisosParaConfirmacao(_dias = 15): Promise<ResultadoV
       // Sem cadastro na planilha o aviso ENTRA na fila do mesmo jeito, marcado
       // para Wesley completar o contato — deixar de fora escondia justamente os
       // processos que precisam de cadastro, e ele fica sem saber que existem.
+      // Ordem de resolução do contato:
+      // 1) planilha de processos cadastrados (fonte oficial)
+      // 2) o que Wesley já preencheu antes nesta tela, guardado por processo —
+      //    evita redigitar nome e telefone a cada varredura
+      // 3) palpite tirado do título do card, só para ele não começar do zero
       const cliente = acharPorProcesso(planilha, processo);
-      const cadastrado = !!(cliente && cliente.phone);
-      const nome = cadastrado ? cliente!.name : nomeSugeridoDoCard(card.name || '');
-      const phone = cadastrado ? cliente!.phone : '';
+      const salvo = cliente?.phone ? null : buscarContatoProcesso(processo, cardId);
+      const nome = cliente?.phone ? cliente.name : (salvo?.nome || nomeSugeridoDoCard(card.name || ''));
+      const phone = cliente?.phone || salvo?.phone || '';
+      const cadastrado = !!phone;
       if (!cadastrado) res.semCadastro.push({ card: String(card.name || '').slice(0, 90), processo });
 
       // Partes e juízo saem do card: identificam o caso na mensagem, para o

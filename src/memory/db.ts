@@ -130,6 +130,19 @@ export async function initDb(): Promise<void> {
       UNIQUE(card_id, tipo, momento)
     );
 
+    -- Contato do cliente por processo, preenchido por Wesley na tela de avisos.
+    -- Muitos processos do Trello não estão na planilha; sem isso ele teria de
+    -- digitar nome e telefone de novo a cada varredura. A chave é o número do
+    -- processo quando existe; senão, o próprio card (multa, recurso sem número).
+    CREATE TABLE IF NOT EXISTS contatos_processo (
+      chave TEXT PRIMARY KEY,
+      processo TEXT,
+      card_id TEXT,
+      nome TEXT,
+      phone TEXT,
+      updated_at INTEGER DEFAULT (unixepoch())
+    );
+
     -- Quais cards já foram vistos em cada lista, para saber quando um é NOVO —
     -- é o gatilho do primeiro aviso de audiência
     CREATE TABLE IF NOT EXISTS cards_vistos (
@@ -403,6 +416,40 @@ function migrarAvisosParaMomento() {
   } catch (err) {
     console.error('[db] falha ao migrar avisos_pendentes:', err);
   }
+}
+
+// ─── Contatos por processo, aprendidos na tela de avisos ──────────────────────
+
+// Chave: o número do processo quando existe; senão o card (multa, recurso sem número)
+export function chaveContato(processo: string, cardId: string): string {
+  const p = String(processo || '').replace(/[^0-9]/g, '');
+  return p.length >= 15 ? p : `card:${cardId}`;
+}
+
+export function salvarContatoProcesso(dados: {
+  processo: string; cardId: string; nome: string; phone: string;
+}) {
+  const chave = chaveContato(dados.processo, dados.cardId);
+  const phone = String(dados.phone || '').replace(/[^0-9]/g, '');
+  if (!chave || (!dados.nome && !phone)) return;
+  getDb().prepare(`
+    INSERT INTO contatos_processo (chave, processo, card_id, nome, phone)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(chave) DO UPDATE SET
+      nome = excluded.nome, phone = excluded.phone,
+      processo = excluded.processo, card_id = excluded.card_id,
+      updated_at = unixepoch()
+  `).run(chave, dados.processo || '', dados.cardId || '', dados.nome || '', phone);
+}
+
+export function buscarContatoProcesso(processo: string, cardId: string): { nome: string; phone: string } | null {
+  const r = getDb().prepare('SELECT nome, phone FROM contatos_processo WHERE chave = ?')
+    .get(chaveContato(processo, cardId)) as any;
+  return r && (r.nome || r.phone) ? { nome: r.nome || '', phone: r.phone || '' } : null;
+}
+
+export function listarContatosProcesso(): any[] {
+  return getDb().prepare('SELECT * FROM contatos_processo ORDER BY updated_at DESC').all() as any[];
 }
 
 // Primeira vez que este card aparece na lista? É o gatilho do aviso de audiência
