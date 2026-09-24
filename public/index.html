@@ -710,6 +710,16 @@
     renderApprovals();
   }
 
+  // Máscara automática de telefone brasileiro: (44) 99999-9999 ou (44) 9999-9999
+  function mascaraTelefone(el) {
+    let v = el.value.replace(/\D/g, '').slice(0, 11);
+    if (v.length === 0) { el.value = ''; return; }
+    let m = '(' + v.slice(0,2);
+    if (v.length > 2) m += ') ' + v.slice(2, v.length > 10 ? 7 : 6);
+    if (v.length > (v.length > 10 ? 7 : 6)) m += '-' + v.slice(v.length > 10 ? 7 : 6);
+    el.value = m;
+  }
+
   function escHtml(str) {
     return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/\n/g,'<br>');
   }
@@ -872,10 +882,10 @@
         '<div style="font-size:11px;color:var(--blue);font-weight:600;">'+tipo+(semCadastro?' — SEM CADASTRO':'')+'</div>' +
         '<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">'+escHtml(a.card_nome||'')+'</div>' +
         alertaCadastro +
-        '<div style="display:flex;gap:8px;margin:6px 0;">' +
-          '<input id="nome-'+a.id+'" value="'+escHtml(a.nome||'')+'" placeholder="Nome para tratar" style="flex:2;'+inputStyle+'">' +
-          '<input id="fone-'+a.id+'" value="'+escHtml(a.phone||'')+'" placeholder="Telefone com DDD" style="flex:1;'+inputStyle+'">' +
-          '<select id="pos-'+a.id+'" style="'+inputStyle+'">' +
+        '<div style="display:flex;gap:8px;margin:6px 0;flex-wrap:wrap;">' +
+          '<input id="nome-'+a.id+'" value="'+escHtml(a.nome||'')+'" placeholder="Nome para tratar" style="flex:2;min-width:140px;'+inputStyle+'">' +
+          '<input id="fone-'+a.id+'" value="'+escHtml(a.phone||'')+'" placeholder="(44) 99999-9999" maxlength="16" oninput="mascaraTelefone(this)" style="flex:1;min-width:140px;'+inputStyle+'">' +
+          '<select id="pos-'+a.id+'" style="min-width:90px;'+inputStyle+'">' +
             ['','autor','réu','outro'].map(v => '<option value="'+v+'"'+((a.posicao||'')===v?' selected':'')+'>'+(v||'posição')+'</option>').join('') +
           '</select>' +
         '</div>' +
