@@ -8,7 +8,7 @@ import {
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
   getActiveConversations, getRecentCorrections, getCorrectionsComContato, getGroups, setGroupActive,
   salvarTreinamento, listarTreinamento, contarTreinamento,
-  listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, atualizarContatoAviso,
+  listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, descartarTodosAvisos, atualizarContatoAviso,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -204,6 +204,13 @@ commandRouter.post('/avisos/:id/contato', (req: Request, res: Response) => {
   atualizarContatoAviso(parseInt(req.params.id), String(nome || ''), limpo, mensagem);
   req.app.locals.io?.emit('avisos_update', {});
   res.json({ ok: true, phone: limpo });
+});
+
+commandRouter.post('/avisos/descartar-todos', (req: Request, res: Response) => {
+  const removidos = descartarTodosAvisos();
+  req.app.locals.io?.emit('avisos_update', {});
+  console.log(`[avisos] ${removidos} aviso(s) descartado(s) de uma vez`);
+  res.json({ ok: true, removidos });
 });
 
 commandRouter.post('/avisos/:id/descartar', (req: Request, res: Response) => {

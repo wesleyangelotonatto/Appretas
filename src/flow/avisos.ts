@@ -51,10 +51,21 @@ export function extrairPartes(titulo: string): string {
 
 // Juízo/vara, quando o card informa
 const RE_JUIZO = /\b(\d+[ªa°o]?\s*)?(vara|juizado|comarca|tribunal|turma|c[âa]mara|f[óo]rum)\b/i;
+// Os cards escrevem o ordinal de qualquer jeito ("1º Vara", "2a Vara"). O certo
+// segue o gênero do termo: 1ª Vara, 1ª Turma, mas 1º Juizado, 1º Tribunal.
+const TERMOS_FEMININOS = 'vara|turma|c[âa]mara|comarca|regi[ãa]o|se[çc][ãa]o|promotoria|defensoria|instância|instancia';
+const TERMOS_MASCULINOS = 'juizado|tribunal|f[óo]rum|ju[íi]zo|cart[óo]rio|of[íi]cio';
+
+export function normalizarOrdinais(texto: string): string {
+  return String(texto || '')
+    .replace(new RegExp(`(\\d+)\\s*[ºoª°a]?\\s+(${TERMOS_FEMININOS})`, 'gi'), (_m, n, termo) => `${n}ª ${termo}`)
+    .replace(new RegExp(`(\\d+)\\s*[ºoª°a]?\\s+(${TERMOS_MASCULINOS})`, 'gi'), (_m, n, termo) => `${n}º ${termo}`);
+}
+
 export function extrairJuizo(texto: string): string {
   const segmentos = String(texto || '').split(/\s+[-–—]\s+|\n/).map(s => s.trim()).filter(Boolean);
   const achado = segmentos.find(s => RE_JUIZO.test(s) && s.length < 80);
-  return achado ? formatarNomeProprio(achado) : '';
+  return achado ? normalizarOrdinais(formatarNomeProprio(achado)) : '';
 }
 
 export function montarMensagem(

@@ -411,6 +411,12 @@ export function marcarAvisoEnviado(id: number, dataEscolhida: string, mensagem: 
   ).run(dataEscolhida, mensagem, id);
 }
 
+// Descarta a fila inteira de avisos, para regerar com o texto novo depois de
+// uma mudança de modelo de mensagem. Devolve quantos foram descartados.
+export function descartarTodosAvisos(): number {
+  return getDb().prepare(`UPDATE avisos_pendentes SET status = 'descartado' WHERE status = 'pendente'`).run().changes;
+}
+
 export function marcarAvisoDescartado(id: number) {
   getDb().prepare(`UPDATE avisos_pendentes SET status = 'descartado' WHERE id = ?`).run(id);
 }
