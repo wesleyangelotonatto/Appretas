@@ -14,7 +14,7 @@ import {
   aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
   MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, JANELA_AUSENCIA, HORARIO_ATENDIMENTO,
   MSG_EMAIL, MSG_PIX,
-  MSG_PEDIR_DADOS_PROCESSO, detectarGenero, type Genero,
+  MSG_PEDIR_DADOS_PROCESSO, detectarGenero, detectarGeneroComIA, type Genero,
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
 import { detectAppointment } from './appointmentDetector';
@@ -265,8 +265,8 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
       return;
     }
 
-    // 5a. Detecta gênero — pelo texto da mensagem e pelo nome já salvo na sessão
-    const genero: Genero = detectarGenero(textBody, session?.name);
+    // 5a. Detecta gênero — prioridade: salvo no banco → texto → nome → IA → neutro
+    const genero: Genero = await detectarGeneroComIA(phone, textBody, session?.name, session?.genero);
 
     // 6. Modo ausência (Wesley em férias / feriado)
     const ausenciaMsg = getSetting('ausencia_msg');
@@ -399,7 +399,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     });
 
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
-    const generoFinal: Genero = detectarGenero(textBody, displayName);
+    const generoFinal: Genero = await detectarGeneroComIA(phone, textBody, displayName, session?.genero);
 
     // Saudação uma vez por dia (primeiro contato do dia). session.updated_at é um epoch
     // REAL (unixepoch() do SQLite), então o corte de "hoje" precisa ser um epoch real

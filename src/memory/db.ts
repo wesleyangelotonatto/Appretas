@@ -221,6 +221,8 @@ export async function initDb(): Promise<void> {
   garantirColuna('contatos_processo', 'partes', 'TEXT');
   garantirColuna('contatos_processo', 'juizo', 'TEXT');
   garantirColuna('contatos_processo', 'posicao', 'TEXT');
+  // Gênero aprendido e persistido por contato (M/F/N) — evita rederivação errada a cada msg
+  garantirColuna('sessions', 'genero', "TEXT DEFAULT 'N'");
 
   limparNomesContaminados();
   console.log('[db] banco inicializado:', DB_PATH);
@@ -248,7 +250,7 @@ export function getSession(phone: string) {
 
 // Colunas que upsertSession pode escrever — protege contra injeção via nomes de coluna
 // caso algum chamador futuro derive as chaves de dados externos (payload de webhook, etc.)
-const SESSION_COLUNAS_PERMITIDAS = new Set(['name', 'type', 'status']);
+const SESSION_COLUNAS_PERMITIDAS = new Set(['name', 'type', 'status', 'genero']);
 
 export function upsertSession(phone: string, data: Record<string, any>) {
   const chaves = Object.keys(data);

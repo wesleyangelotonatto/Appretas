@@ -56,20 +56,26 @@ const NOMES_MASCULINOS = new Set([
  * Detecta gênero a partir da mensagem do cliente e/ou nome.
  * Prioridade: mensagem (mais confiável) → nome → neutro.
  */
+/**
+ * Detecta gênero a partir da mensagem do cliente e/ou nome.
+ * Prioridade: mensagem (marcadores explícitos) → nome (lista + sufixo) → neutro.
+ * Retorna o gênero detectado; o chamador deve persistir no banco quando for confiante.
+ */
 export function detectarGenero(mensagem?: string, nome?: string): Genero {
-  // 1. Pelo conteúdo da mensagem — adjetivos e particípios com concordância de gênero
+  // 1. Pelo conteúdo da mensagem — adjetivos e particípios com concordância clara
   if (mensagem) {
     const texto = mensagem.toLowerCase();
     const femininos = [
-      /\b(estou|fico|fiquei|estava|sou|era)\s+\w*(ada|ida|ída|osa|esa|esa|uda|nda)\b/,
-      /\b(preocupada|insatisfeita|satisfeita|indignada|frustrada|cansada|surpresa|contente|feliz\s+com)\b/,
-      /\b(fui\s+atendida|fui\s+informada|fui\s+orientada|fui\s+comunicada)\b/,
+      /\b(estou|fico|fiquei|estava|sou|era|me\s+sinto)\s+\w*(ada|ida|ída|osa|esa|uda|nda)\b/,
+      /\b(preocupada|insatisfeita|satisfeita|indignada|frustrada|cansada|surpresa|constrangida|prejudicada|lesada|enganada|cobrada\s+indevidamente)\b/,
+      /\b(fui\s+atendida|fui\s+informada|fui\s+orientada|fui\s+comunicada|fui\s+prejudicada|fui\s+cobrada|fui\s+desrespeitada)\b/,
       /\badvogada\b/,
+      /\b(cliente|part[ei])\b.*\bsatisfeita\b/,
     ];
     const masculinos = [
-      /\b(estou|fico|fiquei|estava|sou|era)\s+\w*(ado|ido|ído|oso|eso|udo|ndo)\b/,
-      /\b(preocupado|insatisfeito|satisfeito|indignado|frustrado|cansado|surpreso|contente)\b/,
-      /\b(fui\s+atendido|fui\s+informado|fui\s+orientado|fui\s+comunicado)\b/,
+      /\b(estou|fico|fiquei|estava|sou|era|me\s+sinto)\s+\w*(ado|ido|ído|oso|eso|udo|ndo)\b/,
+      /\b(preocupado|insatisfeito|satisfeito|indignado|frustrado|cansado|surpreso|constrangido|prejudicado|lesado|enganado|cobrado\s+indevidamente)\b/,
+      /\b(fui\s+atendido|fui\s+informado|fui\s+orientado|fui\s+comunicado|fui\s+prejudicado|fui\s+cobrado|fui\s+desrespeitado)\b/,
       /\badvogado\b/,
     ];
     if (femininos.some(re => re.test(texto))) return 'F';
@@ -78,12 +84,67 @@ export function detectarGenero(mensagem?: string, nome?: string): Genero {
 
   // 2. Pelo primeiro nome
   if (nome) {
-    const primeiro = nome.trim().split(/\s+/)[0].toLowerCase();
+    const primeiro = nome.trim().split(/\s+/)[0].toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, ''); // ignora acentos na busca
     if (NOMES_FEMININOS.has(primeiro)) return 'F';
     if (NOMES_MASCULINOS.has(primeiro)) return 'M';
-    // Heurística por sufixo (funciona para maioria dos nomes brasileiros)
+    // Heurística por sufixo: nomes terminados em -a/-ã geralmente femininos.
+    // Exceções masculinas comuns (Luca, Joshua, Elias, Jonas, Lucas, Matias,
+    // Tobias, Nicola, Andrea no BR) já devem estar na lista acima.
     if (SUFIXOS_FEMININOS.test(primeiro) && primeiro.length > 3) return 'F';
-    if (!SUFIXOS_FEMININOS.test(primeiro) && primeiro.length > 3) return 'M';
+    // Sem sufixo feminino e comprimento razoável → masculino (melhor que neutro:
+    // a maioria dos erros relatados eram masculinos tratados como neutros).
+    if (primeiro.length > 3) return 'M';
+  }
+
+  return 'N';
+}
+
+/**
+ * Versão assíncrona: usa a síncona primeiro; se o resultado for 'N' e houver
+ * nome, pergunta à IA para evitar o neutro genérico ("o(a) senhor(a)").
+ * Persiste automaticamente no banco via upsertSession.
+ */
+export async function detectarGeneroComIA(
+  phone: string,
+  mensagem?: string,
+  nome?: string,
+  generoSalvo?: string,
+): Promise<Genero> {
+  // Gênero já aprendido e salvo para este contato — usa sem recalcular
+  if (generoSalvo === 'M' || generoSalvo === 'F') return generoSalvo as Genero;
+
+  const sincrono = detectarGenero(mensagem, nome);
+  if (sincrono !== 'N') {
+    // Salva para as próximas interações
+    try {
+      const { upsertSession } = await import('./memory/db');
+      upsertSession(phone, { genero: sincrono });
+    } catch { /* não bloqueia */ }
+    return sincrono;
+  }
+
+  // Ainda neutro e há nome: pergunta à IA
+  if (nome) {
+    try {
+      const Anthropic = (await import('@anthropic-ai/sdk')).default;
+      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const r = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 10,
+        messages: [{
+          role: 'user',
+          content: `O nome "${nome}" é de uma pessoa do sexo masculino ou feminino no Brasil? Responda apenas "M" ou "F".`,
+        }],
+      });
+      const txt = (r.content[0] as any).text?.trim().toUpperCase();
+      const genero: Genero = txt === 'F' ? 'F' : txt === 'M' ? 'M' : 'N';
+      if (genero !== 'N') {
+        const { upsertSession } = await import('./memory/db');
+        upsertSession(phone, { genero });
+      }
+      return genero;
+    } catch { /* fallback neutro */ }
   }
 
   return 'N';
