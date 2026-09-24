@@ -8,7 +8,7 @@ import {
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
   getActiveConversations, getRecentCorrections, getCorrectionsComContato, getGroups, setGroupActive,
   salvarTreinamento, listarTreinamento, contarTreinamento,
-  listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, descartarTodosAvisos, atualizarContatoAviso,
+  listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, descartarTodosAvisos, atualizarContatoAviso, atualizarDadosAviso,
   salvarContatoProcesso, listarContatosProcesso,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
@@ -182,6 +182,8 @@ commandRouter.post('/avisos/:id/aprovar', async (req: Request, res: Response) =>
     salvarContatoProcesso({
       processo: aviso.processo, cardId: aviso.card_id,
       nome: String(req.body?.nome || aviso.nome || ''), phone: destino,
+      partes: String(req.body?.partes || ''), juizo: String(req.body?.juizo || ''),
+      posicao: String(req.body?.posicao || ''),
     });
 
     await sendMessage(destino, texto);
@@ -202,7 +204,7 @@ commandRouter.post('/avisos/:id/aprovar', async (req: Request, res: Response) =>
 
 // POST /command/avisos/:id/contato — salva nome e telefone corrigidos na tela
 commandRouter.post('/avisos/:id/contato', (req: Request, res: Response) => {
-  const { nome, phone, mensagem } = req.body || {};
+  const { nome, phone, mensagem, partes, juizo, posicao } = req.body || {};
   const limpo = String(phone || '').replace(/[^0-9]/g, '');
   if (limpo && (limpo.length < 10 || limpo.length > 13)) {
     return res.status(400).json({ error: 'Telefone deve ter DDD + número (10 a 13 dígitos)' });
@@ -211,9 +213,38 @@ commandRouter.post('/avisos/:id/contato', (req: Request, res: Response) => {
   atualizarContatoAviso(id, String(nome || ''), limpo, mensagem);
   // Guarda por processo: na próxima varredura o contato já vem preenchido
   const aviso = getAvisoPendente(id);
-  if (aviso) salvarContatoProcesso({ processo: aviso.processo, cardId: aviso.card_id, nome: String(nome || ''), phone: limpo });
+  if (aviso) {
+    atualizarDadosAviso(id, { partes: String(partes || ''), juizo: String(juizo || ''), posicao: String(posicao || '') });
+    salvarContatoProcesso({
+      processo: aviso.processo, cardId: aviso.card_id,
+      nome: String(nome || ''), phone: limpo,
+      partes: String(partes || ''), juizo: String(juizo || ''), posicao: String(posicao || ''),
+    });
+  }
   req.app.locals.io?.emit('avisos_update', {});
   res.json({ ok: true, phone: limpo });
+});
+
+// POST /command/avisos/:id/refazer — reescreve a mensagem no servidor, com a
+// data e os dados escolhidos. O painel tinha uma cópia do modelo em JavaScript,
+// que ficou para trás quando o texto mudou: agora existe um modelo só.
+commandRouter.post('/avisos/:id/refazer', async (req: Request, res: Response) => {
+  try {
+    const aviso = getAvisoPendente(parseInt(req.params.id));
+    if (!aviso) return res.status(404).json({ error: 'Aviso não encontrado' });
+    const { montarMensagem } = await import('../flow/avisos');
+    const { dataIso, nome, partes, juizo } = req.body || {};
+    const mensagem = montarMensagem(
+      aviso.tipo,
+      String(nome || aviso.nome || ''),
+      String(dataIso || aviso.data_escolhida || ''),
+      aviso.processo,
+      { partes: String(partes ?? aviso.partes ?? ''), juizo: String(juizo ?? aviso.juizo ?? ''), momento: aviso.momento },
+    );
+    res.json({ ok: true, mensagem });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  }
 });
 
 commandRouter.post('/avisos/descartar-todos', (req: Request, res: Response) => {

@@ -206,17 +206,21 @@ export async function gerarAvisosParaConfirmacao(_dias = 15): Promise<ResultadoV
       // 2) o que Wesley já preencheu antes nesta tela, guardado por processo —
       //    evita redigitar nome e telefone a cada varredura
       // 3) palpite tirado do título do card, só para ele não começar do zero
+      // Ordem de resolução, campo a campo:
+      // 1) o que Wesley corrigiu na tela — correção dele vale mais que tudo,
+      //    senão a varredura seguinte desfaria o trabalho que ele já teve
+      // 2) planilha de processos cadastrados
+      // 3) o que dá para tirar do card, só para não começar do zero
+      const salvo = buscarContatoProcesso(processo, cardId);
       const cliente = acharPorProcesso(planilha, processo);
-      const salvo = cliente?.phone ? null : buscarContatoProcesso(processo, cardId);
-      const nome = cliente?.phone ? cliente.name : (salvo?.nome || nomeSugeridoDoCard(card.name || ''));
-      const phone = cliente?.phone || salvo?.phone || '';
+
+      const nome = salvo?.nome || (cliente?.phone ? cliente.name : nomeSugeridoDoCard(card.name || ''));
+      const phone = salvo?.phone || cliente?.phone || '';
+      const partes = salvo?.partes || extrairPartes(card.name || '');
+      const juizo = salvo?.juizo || extrairJuizo(`${card.name || ''} - ${card.desc || ''}`);
+      const posicao = salvo?.posicao || '';
       const cadastrado = !!phone;
       if (!cadastrado) res.semCadastro.push({ card: String(card.name || '').slice(0, 90), processo });
-
-      // Partes e juízo saem do card: identificam o caso na mensagem, para o
-      // cliente saber de qual processo se trata sem precisar do número
-      const partes = extrairPartes(card.name || '');
-      const juizo = extrairJuizo(`${card.name || ''} - ${card.desc || ''}`);
 
       for (const { momento, dataIso } of momentos) {
         const criado = salvarAvisoPendente({
@@ -231,6 +235,7 @@ export async function gerarAvisosParaConfirmacao(_dias = 15): Promise<ResultadoV
           cadastrado,
           partes,
           juizo,
+          posicao,
           momento,
         });
         if (criado) res.criados++;

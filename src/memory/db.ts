@@ -140,6 +140,9 @@ export async function initDb(): Promise<void> {
       card_id TEXT,
       nome TEXT,
       phone TEXT,
+      partes TEXT,      -- nome das partes, como Wesley corrigiu
+      juizo TEXT,       -- vara/comarca, como Wesley corrigiu
+      posicao TEXT,     -- posição do cliente: autor | réu | outro
       updated_at INTEGER DEFAULT (unixepoch())
     );
 
@@ -196,10 +199,16 @@ export async function initDb(): Promise<void> {
   // CREATE TABLE IF NOT EXISTS não altera tabela que já existe: uma coluna nova
   // só entra por ALTER. Sem isso, um banco criado por uma versão anterior fica
   // sem a coluna e toda gravação falha ("has no column named ...").
+  // A recriação da tabela vem PRIMEIRO: ela reconstrói o esquema inteiro, então
+  // acrescentar colunas antes fazia a coluna nova ser descartada na recriação
+  migrarAvisosParaMomento();
   garantirColuna('avisos_pendentes', 'cadastrado', 'INTEGER DEFAULT 1');
   garantirColuna('avisos_pendentes', 'partes', 'TEXT');
   garantirColuna('avisos_pendentes', 'juizo', 'TEXT');
-  migrarAvisosParaMomento();
+  garantirColuna('avisos_pendentes', 'posicao', 'TEXT');
+  garantirColuna('contatos_processo', 'partes', 'TEXT');
+  garantirColuna('contatos_processo', 'juizo', 'TEXT');
+  garantirColuna('contatos_processo', 'posicao', 'TEXT');
 
   limparNomesContaminados();
   console.log('[db] banco inicializado:', DB_PATH);
@@ -398,16 +407,16 @@ function migrarAvisosParaMomento() {
         tipo TEXT, card_id TEXT, card_nome TEXT, processo TEXT,
         phone TEXT, nome TEXT, datas_json TEXT, data_escolhida TEXT,
         mensagem TEXT, status TEXT DEFAULT 'pendente',
-        cadastrado INTEGER DEFAULT 1, partes TEXT, juizo TEXT,
+        cadastrado INTEGER DEFAULT 1, partes TEXT, juizo TEXT, posicao TEXT,
         momento TEXT DEFAULT 'dia',
         created_at INTEGER DEFAULT (unixepoch()),
         UNIQUE(card_id, tipo, momento)
       );
       INSERT INTO avisos_pendentes
         (id, tipo, card_id, card_nome, processo, phone, nome, datas_json,
-         data_escolhida, mensagem, status, cadastrado, partes, juizo, momento, created_at)
+         data_escolhida, mensagem, status, cadastrado, partes, juizo, posicao, momento, created_at)
       SELECT id, tipo, card_id, card_nome, processo, phone, nome, datas_json,
-             data_escolhida, mensagem, status, cadastrado, partes, juizo,
+             data_escolhida, mensagem, status, cadastrado, partes, juizo, '',
              CASE WHEN tipo = 'prazo' THEN 'dia' ELSE 'novo' END, created_at
       FROM avisos_pendentes_antiga;
       DROP TABLE avisos_pendentes_antiga;
@@ -426,26 +435,43 @@ export function chaveContato(processo: string, cardId: string): string {
   return p.length >= 15 ? p : `card:${cardId}`;
 }
 
+export interface ContatoProcesso {
+  nome: string; phone: string; partes: string; juizo: string; posicao: string;
+}
+
+// Guarda TUDO que Wesley corrigiu para aquele processo — nome, destinatário,
+// partes, juízo e posição. Na próxima varredura esses valores voltam prontos,
+// em vez de o sistema reextrair do card e desfazer a correção. Campo vazio não
+// apaga o que já estava guardado.
 export function salvarContatoProcesso(dados: {
-  processo: string; cardId: string; nome: string; phone: string;
+  processo: string; cardId: string; nome?: string; phone?: string;
+  partes?: string; juizo?: string; posicao?: string;
 }) {
   const chave = chaveContato(dados.processo, dados.cardId);
   const phone = String(dados.phone || '').replace(/[^0-9]/g, '');
-  if (!chave || (!dados.nome && !phone)) return;
+  const algo = dados.nome || phone || dados.partes || dados.juizo || dados.posicao;
+  if (!chave || !algo) return;
   getDb().prepare(`
-    INSERT INTO contatos_processo (chave, processo, card_id, nome, phone)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO contatos_processo (chave, processo, card_id, nome, phone, partes, juizo, posicao)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(chave) DO UPDATE SET
-      nome = excluded.nome, phone = excluded.phone,
+      nome    = COALESCE(NULLIF(excluded.nome, ''),    contatos_processo.nome),
+      phone   = COALESCE(NULLIF(excluded.phone, ''),   contatos_processo.phone),
+      partes  = COALESCE(NULLIF(excluded.partes, ''),  contatos_processo.partes),
+      juizo   = COALESCE(NULLIF(excluded.juizo, ''),   contatos_processo.juizo),
+      posicao = COALESCE(NULLIF(excluded.posicao, ''), contatos_processo.posicao),
       processo = excluded.processo, card_id = excluded.card_id,
       updated_at = unixepoch()
-  `).run(chave, dados.processo || '', dados.cardId || '', dados.nome || '', phone);
+  `).run(chave, dados.processo || '', dados.cardId || '', dados.nome || '', phone,
+         dados.partes || '', dados.juizo || '', dados.posicao || '');
 }
 
-export function buscarContatoProcesso(processo: string, cardId: string): { nome: string; phone: string } | null {
-  const r = getDb().prepare('SELECT nome, phone FROM contatos_processo WHERE chave = ?')
+export function buscarContatoProcesso(processo: string, cardId: string): ContatoProcesso | null {
+  const r = getDb().prepare('SELECT nome, phone, partes, juizo, posicao FROM contatos_processo WHERE chave = ?')
     .get(chaveContato(processo, cardId)) as any;
-  return r && (r.nome || r.phone) ? { nome: r.nome || '', phone: r.phone || '' } : null;
+  if (!r) return null;
+  const algo = r.nome || r.phone || r.partes || r.juizo || r.posicao;
+  return algo ? { nome: r.nome || '', phone: r.phone || '', partes: r.partes || '', juizo: r.juizo || '', posicao: r.posicao || '' } : null;
 }
 
 export function listarContatosProcesso(): any[] {
@@ -475,7 +501,7 @@ function garantirColuna(tabela: string, coluna: string, definicao: string) {
 export function salvarAvisoPendente(a: {
   tipo: string; cardId: string; cardNome: string; processo: string;
   phone: string; nome: string; datasJson: string; mensagem: string; cadastrado: boolean;
-  partes?: string; juizo?: string; momento?: string;
+  partes?: string; juizo?: string; posicao?: string; momento?: string;
 }): boolean {
   // UNIQUE(card_id, tipo) impede duplicar o que já está na fila. Mas o descarte
   // apenas marca a linha, e com INSERT OR IGNORE o card descartado nunca voltava
@@ -484,17 +510,18 @@ export function salvarAvisoPendente(a: {
   // fora, para o cliente não receber o mesmo aviso duas vezes.
   const r = getDb().prepare(`
     INSERT INTO avisos_pendentes
-      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado, partes, juizo, momento)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado, partes, juizo, posicao, momento)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(card_id, tipo, momento) DO UPDATE SET
       card_nome = excluded.card_nome, processo = excluded.processo,
       phone = excluded.phone, nome = excluded.nome,
       datas_json = excluded.datas_json, mensagem = excluded.mensagem,
       cadastrado = excluded.cadastrado, partes = excluded.partes, juizo = excluded.juizo,
+      posicao = excluded.posicao,
       status = 'pendente', data_escolhida = NULL, created_at = unixepoch()
     WHERE avisos_pendentes.status = 'descartado'
   `).run(a.tipo, a.cardId, a.cardNome, a.processo, a.phone, a.nome, a.datasJson, a.mensagem,
-         a.cadastrado ? 1 : 0, a.partes || '', a.juizo || '', a.momento || 'dia');
+         a.cadastrado ? 1 : 0, a.partes || '', a.juizo || '', a.posicao || '', a.momento || 'dia');
   return r.changes > 0;
 }
 
@@ -506,6 +533,18 @@ export function atualizarContatoAviso(id: number, nome: string, phone: string, m
     : 'nome = ?, phone = ?';
   const args: any[] = mensagem !== undefined ? [nome, phone, mensagem, id] : [nome, phone, id];
   getDb().prepare(`UPDATE avisos_pendentes SET ${campos} WHERE id = ?`).run(...args);
+}
+
+// Guarda no próprio aviso as correções de partes, juízo e posição, para a tela
+// continuar mostrando o corrigido enquanto ele estiver na fila
+export function atualizarDadosAviso(id: number, d: { partes?: string; juizo?: string; posicao?: string }) {
+  getDb().prepare(`
+    UPDATE avisos_pendentes SET
+      partes  = COALESCE(NULLIF(?, ''), partes),
+      juizo   = COALESCE(NULLIF(?, ''), juizo),
+      posicao = COALESCE(NULLIF(?, ''), posicao)
+    WHERE id = ?
+  `).run(d.partes || '', d.juizo || '', d.posicao || '', id);
 }
 
 export function listarAvisosPendentes(): any[] {

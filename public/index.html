@@ -875,7 +875,14 @@
         '<div style="display:flex;gap:8px;margin:6px 0;">' +
           '<input id="nome-'+a.id+'" value="'+escHtml(a.nome||'')+'" placeholder="Nome para tratar" style="flex:2;'+inputStyle+'">' +
           '<input id="fone-'+a.id+'" value="'+escHtml(a.phone||'')+'" placeholder="Telefone com DDD" style="flex:1;'+inputStyle+'">' +
-          '<button class="btn" style="background:var(--surface2);font-size:11px;" onclick="salvarContatoAviso('+a.id+')">Salvar contato</button>' +
+          '<select id="pos-'+a.id+'" style="'+inputStyle+'">' +
+            ['','autor','réu','outro'].map(v => '<option value="'+v+'"'+((a.posicao||'')===v?' selected':'')+'>'+(v||'posição')+'</option>').join('') +
+          '</select>' +
+        '</div>' +
+        '<div style="display:flex;gap:8px;margin:6px 0;">' +
+          '<input id="partes-'+a.id+'" value="'+escHtml(a.partes||'')+'" placeholder="Partes (Fulano x Beltrano)" style="flex:2;'+inputStyle+'">' +
+          '<input id="juizo-'+a.id+'" value="'+escHtml(a.juizo||'')+'" placeholder="Juízo / vara" style="flex:2;'+inputStyle+'">' +
+          '<button class="btn" style="background:var(--surface2);font-size:11px;white-space:nowrap;" onclick="salvarContatoAviso('+a.id+')">Salvar dados</button>' +
         '</div>' +
         alerta +
         '<div style="margin:6px 0;">'+opcoes+'</div>' +
@@ -911,56 +918,52 @@
     }
   }
 
+  function dadosAviso(id) {
+    return {
+      nome: document.getElementById('nome-'+id).value.trim(),
+      phone: document.getElementById('fone-'+id).value.trim(),
+      partes: document.getElementById('partes-'+id).value.trim(),
+      juizo: document.getElementById('juizo-'+id).value.trim(),
+      posicao: document.getElementById('pos-'+id).value,
+    };
+  }
+
   async function salvarContatoAviso(id) {
-    const nome = document.getElementById('nome-'+id).value.trim();
-    const phone = document.getElementById('fone-'+id).value.trim();
-    const mensagem = textoAtualAviso(id);
+    const d0 = dadosAviso(id);
     const r = await fetch('/command/avisos/'+id+'/contato', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ nome, phone, mensagem })
+      body: JSON.stringify({ ...d0, mensagem: textoAtualAviso(id) })
     });
     const d = await r.json();
     document.getElementById('avisos-status').textContent = d.error
       ? ('Erro: ' + d.error)
-      : ('Contato salvo: ' + nome + ' / ' + (d.phone || 'sem telefone'));
+      : ('Salvo para este processo: ' + (d0.nome || 'sem nome') + ' / ' + (d.phone || 'sem telefone') + '. Vale para os próximos avisos.');
+    // reflete no objeto em memoria, para "Refazer texto" usar o corrigido
+    const a = avisos.find(x => x.id === id);
+    if (a) Object.assign(a, d0);
   }
 
-  // Reescreve o texto usando a data que esta marcada agora, sem perder as edicoes
-  // de nome — util quando Wesley troca a data escolhida depois de ler os trechos
-  function refazerMensagem(id) {
-    const a = avisos.find(x => x.id === id);
+  // Reescreve o texto pelo servidor, com a data marcada e os dados corrigidos.
+  // O modelo da mensagem existe num lugar so, no servidor.
+  async function refazerMensagem(id) {
     const sel = document.querySelector('input[name="data-'+id+'"]:checked');
-    if (!a || !sel) return;
-    const nomeCompleto = document.getElementById('nome-'+id).value.trim();
-    const nome = nomeCompleto ? nomeCompleto.split(/\s+/)[0] : '';
-    const dt = new Date(sel.value);
-    const data = dt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
-    const hora = dt.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
-    const trat = nome ? ('Olá, ' + nome + '!') : 'Olá!';
-    const partes = a.partes ? (' (' + a.partes + ')') : '';
-    const juizo = a.juizo ? (', na ' + a.juizo + ',') : '';
-    let txt;
-    if (a.tipo === 'audiencia') {
-      const quando = hora === '00:00' ? ('o dia ' + data) : ('o dia ' + data + ', às ' + hora);
-      txt = trat + ' Passando para lembrar que a audiência do seu processo' + partes + juizo + ' está marcada para ' + quando +
-            '. Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.';
-    } else {
-      const ref = a.partes ? (' ' + a.partes) : (a.processo ? (' (' + a.processo + ')') : '');
-      txt = trat + ' Passando para avisar que temos um prazo a cumprir no seu processo' + ref + juizo +
-            ' até ' + data + '. Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.';
-    }
-    document.getElementById('msg-'+id).value = txt;
-    document.getElementById('txt-'+id).textContent = txt;
+    const d0 = dadosAviso(id);
+    const r = await (await fetch('/command/avisos/'+id+'/refazer', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ dataIso: sel ? sel.value : '', ...d0 })
+    })).json();
+    if (r.error) { document.getElementById('avisos-status').textContent = 'Erro: ' + r.error; return; }
+    document.getElementById('msg-'+id).value = r.mensagem;
+    document.getElementById('txt-'+id).textContent = r.mensagem;
   }
 
   async function aprovarAviso(id) {
     const sel = document.querySelector('input[name="data-'+id+'"]:checked');
     const msg = textoAtualAviso(id);
-    const nome = document.getElementById('nome-'+id).value.trim();
-    const phone = document.getElementById('fone-'+id).value.trim();
+    const d0 = dadosAviso(id);
     const r = await (await fetch('/command/avisos/'+id+'/aprovar', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ dataIso: sel ? sel.value : '', mensagem: msg, nome, phone })
+      body: JSON.stringify({ dataIso: sel ? sel.value : '', mensagem: msg, ...d0 })
     })).json();
     if (r.error) {
       document.getElementById('avisos-status').textContent = 'Erro: ' + r.error;
