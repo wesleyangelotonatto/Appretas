@@ -202,8 +202,13 @@ async function getCardsFromList(keyword: string): Promise<any[]> {
     }
     console.log(`[trello] lista "${keyword}" -> "${targetList.name}"`);
 
-    const cardsRes = await axios.get(`${BASE}/lists/${targetList.id}/cards`, { params: auth() });
-    return cardsRes.data;
+    // Traz comentários e checklists junto com os cards, numa requisição só.
+    // Buscar card a card estourava o limite do Trello (HTTP 429) e o resultado
+    // voltava vazio, como se as listas não tivessem nada.
+    const comExtras = await axios.get(`${BASE}/lists/${targetList.id}/cards`, {
+      params: { ...auth(), actions: 'commentCard', actions_limit: 20, checklists: 'all' },
+    });
+    return comExtras.data;
   } catch (err) {
     console.error(`[trello] erro ao buscar lista ${keyword}:`, err);
     return [];

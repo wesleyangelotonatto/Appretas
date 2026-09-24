@@ -71,11 +71,19 @@ export async function coletarDatasDoCard(card: any): Promise<DataEncontrada[]> {
   }
   todas.push(...extrairDatasDeTexto(card.desc || '', 'descrição'));
 
-  const id = card.id || card.shortLink;
-  if (id) {
-    for (const c of await getCardComentarios(id)) todas.push(...extrairDatasDeTexto(c, 'comentário'));
-    for (const i of await getCardChecklists(id)) todas.push(...extrairDatasDeTexto(i, 'checklist'));
-  }
+  // Comentários e checklists costumam vir junto do card (ver getCardsFromList).
+  // Só busca separado quando não vieram — uma requisição por card estourava o
+  // limite do Trello e devolvia tudo vazio.
+  const comentarios: string[] = Array.isArray(card.actions)
+    ? card.actions.filter((a: any) => a?.type === 'commentCard').map((a: any) => String(a?.data?.text || ''))
+    : await getCardComentarios(card.id || card.shortLink || '');
+
+  const itensChecklist: string[] = Array.isArray(card.checklists)
+    ? card.checklists.flatMap((cl: any) => (cl?.checkItems || []).map((it: any) => String(it?.name || '')))
+    : await getCardChecklists(card.id || card.shortLink || '');
+
+  for (const c of comentarios) if (c) todas.push(...extrairDatasDeTexto(c, 'comentário'));
+  for (const i of itensChecklist) if (i) todas.push(...extrairDatasDeTexto(i, 'checklist'));
 
   // Ordena da mais próxima para a mais distante, sem descartar nenhuma
   return todas.sort((a, b) => a.dataIso.localeCompare(b.dataIso));
