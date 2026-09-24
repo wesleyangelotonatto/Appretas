@@ -253,10 +253,14 @@ export async function processarJanelasVencidas(): Promise<void> {
 async function responderConversa(phone: string, textBody: string, io: any, waName?: string) {
   try {
     const session = getSession(phone);
+    const calibrando = modoCalibragem();
 
     // Silêncio é resposta válida: quando o cliente está apenas relatando,
     // mandando documentos ou confirmando algo, responder só gera ruído.
-    if (!(await precisaDeResposta(phone, textBody))) {
+    // Em calibragem o filtro é desativado: o objetivo é ver o rascunho de
+    // TODAS as conversas — inclusive as que Wesley já respondeu — para poder
+    // comparar, corrigir e treinar a IA sem que nada chegue ao cliente.
+    if (!calibrando && !(await precisaDeResposta(phone, textBody))) {
       console.log(`[orchestrator] ${phone} não pede resposta — nenhuma mensagem gerada`);
       return;
     }
