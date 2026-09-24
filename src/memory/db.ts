@@ -158,6 +158,11 @@ export async function initDb(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_fup2_next ON follow_ups_v2(next_send_at, status);
   `);
 
+  // CREATE TABLE IF NOT EXISTS não altera tabela que já existe: uma coluna nova
+  // só entra por ALTER. Sem isso, um banco criado por uma versão anterior fica
+  // sem a coluna e toda gravação falha ("has no column named ...").
+  garantirColuna('avisos_pendentes', 'cadastrado', 'INTEGER DEFAULT 1');
+
   limparNomesContaminados();
   console.log('[db] banco inicializado:', DB_PATH);
 }
@@ -305,6 +310,19 @@ export function limparTreinamento(): number {
 }
 
 // ─── Avisos de audiência e prazo aguardando confirmação ───────────────────────
+
+// Acrescenta uma coluna a uma tabela já existente, se ela ainda não estiver lá
+function garantirColuna(tabela: string, coluna: string, definicao: string) {
+  try {
+    const cols = getDb().prepare(`PRAGMA table_info(${tabela})`).all() as any[];
+    if (!cols.length) return; // tabela ainda não existe; o CREATE já a cria completa
+    if (cols.some(c => c.name === coluna)) return;
+    getDb().prepare(`ALTER TABLE ${tabela} ADD COLUMN ${coluna} ${definicao}`).run();
+    console.log(`[db] coluna ${tabela}.${coluna} adicionada`);
+  } catch (err) {
+    console.error(`[db] falha ao garantir coluna ${tabela}.${coluna}:`, err);
+  }
+}
 
 export function salvarAvisoPendente(a: {
   tipo: string; cardId: string; cardNome: string; processo: string;
