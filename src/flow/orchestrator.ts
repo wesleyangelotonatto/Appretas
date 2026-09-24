@@ -545,7 +545,14 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
 
   if (modoTreino) {
     const id = savePendingApproval(phone, draft, context);
-    io?.emit('pending_approval', { id, phone, draft, context, timestamp: Date.now() });
+    // Vai o nome junto: revisar um rascunho olhando só para o número não diz a
+    // quem se está respondendo
+    const sessao = getSession(phone);
+    io?.emit('pending_approval', {
+      id, phone, draft, context, timestamp: Date.now(),
+      nome: contactName || sessao?.name || '',
+      tipo_contato: sessao?.type || '',
+    });
     console.log(`[treino] resposta enfileirada para aprovação — ${phone}`);
   } else {
     await sendMessage(phone, draft);

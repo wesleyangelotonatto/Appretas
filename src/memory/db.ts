@@ -247,8 +247,15 @@ export function savePendingApproval(phone: string, draft: string, context: strin
     .run(phone, draft, context)).lastInsertRowid;
 }
 
+// Junta o nome e o tipo do contato: revisar um rascunho olhando só para o
+// número não diz a quem se está respondendo nem em que contexto
 export function getPendingApprovals() {
-  return getDb().prepare('SELECT * FROM pending_approvals ORDER BY created_at').all() as any[];
+  return getDb().prepare(`
+    SELECT p.*, s.name AS nome, s.type AS tipo_contato
+    FROM pending_approvals p
+    LEFT JOIN sessions s ON s.phone = p.phone
+    ORDER BY p.created_at
+  `).all() as any[];
 }
 
 export function deletePendingApproval(id: number) {
@@ -274,6 +281,18 @@ export function getRecentCorrections(limit = 20): Array<{ original: string; corr
     FROM corrections
     GROUP BY original, corrected
     ORDER BY ts DESC
+    LIMIT ?
+  `).all(limit) as any[];
+}
+
+// Correções com o contato identificado, para a tela de revisão
+export function getCorrectionsComContato(limit = 50): any[] {
+  return getDb().prepare(`
+    SELECT c.phone, c.original, c.corrected, c.context, c.created_at,
+           s.name AS nome, s.type AS tipo_contato
+    FROM corrections c
+    LEFT JOIN sessions s ON s.phone = c.phone
+    ORDER BY c.created_at DESC
     LIMIT ?
   `).all(limit) as any[];
 }

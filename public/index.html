@@ -484,7 +484,11 @@
     section.className = 'approvals-section has-items';
     list.innerHTML = filtered.map(a => `
       <div class="approval-item" id="apr-${a.id}">
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Para: <b>${escHtml(a.phone)}</b></div>
+        <div style="font-size:12px;margin-bottom:4px;">
+          <b>${escHtml(a.nome || '(sem nome cadastrado)')}</b>
+          <span style="color:var(--text-muted);font-size:11px;"> — ${escHtml(a.phone)}</span>
+          ${a.tipo_contato ? `<span class="badge" style="margin-left:6px;font-size:9px;">${escHtml(a.tipo_contato)}</span>` : ''}
+        </div>
         <div class="draft-text" id="draft-text-${a.id}">${escHtml(a.draft)}</div>
         <textarea class="edit-area" id="edit-${a.id}">${escHtml(a.draft)}</textarea>
         <div class="approval-actions">

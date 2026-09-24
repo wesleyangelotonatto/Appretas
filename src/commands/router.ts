@@ -6,7 +6,7 @@ import {
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval, deleteAllPendingApprovals,
   createFollowUpV2, getFollowUpsForPhone, updateFollowUpV2Status,
   getSetting, setSetting, saveCorrection, savePendingApproval as _savePendingApproval,
-  getActiveConversations, getRecentCorrections, getGroups, setGroupActive,
+  getActiveConversations, getRecentCorrections, getCorrectionsComContato, getGroups, setGroupActive,
   salvarTreinamento, listarTreinamento, contarTreinamento,
   listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, atualizarContatoAviso,
 } from '../memory/db';
@@ -281,7 +281,7 @@ commandRouter.get('/conversations', (_req, res) => {
 
 // GET /command/corrections — lista correções salvas para treinamento (edições antes de aprovar)
 commandRouter.get('/corrections', (_req, res) => {
-  res.json(getRecentCorrections(50));
+  res.json(getCorrectionsComContato(50));
 });
 
 // POST /command/takeover — Wesley assume conversa

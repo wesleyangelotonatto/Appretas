@@ -126,7 +126,7 @@ export const MSG_PROCESSO_NAO_ENCONTRADO = `Estou verificando o andamento com o 
 
 export const MSG_URGENCIA_AGUARDAR = `Sua mensagem foi recebida e já estou verificando com o Dr. Wesley. Retorno em breve.`;
 
-export const MSG_PEDIR_ADVOGADO = `Vou comunicar ao Dr. Wesley sua solicitação. A *Iara* anotou e ele retornará assim que possível.`;
+export const MSG_PEDIR_ADVOGADO = `Vou comunicar ao Dr. Wesley sua solicitação. Já anotei e ele retornará assim que possível.`;
 
 // E-mail e PIX são respostas fixas (não geradas por IA) para garantir que o dado nunca
 // seja inventado ou alterado por erro de geração — especialmente crítico para o PIX.
@@ -145,7 +145,7 @@ export function MSG_PEDIR_DADOS_PROCESSO(_temNome: boolean): string {
 }
 
 export function MSG_RECUSA_SECRETARIA(g: Genero = 'N'): string {
-  return `Compreendo. A *Iara* vai informar ao Dr. Wesley que ${tratamento(g)} deseja falar diretamente com ele. Assim que possível, ele entrará em contato.`;
+  return `Compreendo. Vou informar ao Dr. Wesley que ${tratamento(g)} deseja falar diretamente com ele. Assim que possível, ele entrará em contato.`;
 }
 
 export const MSG_AMIGO = `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley. Parece que sua mensagem é de cunho pessoal. Caso eu esteja enganada, por favor me corrija. Vou repassar ao Dr. Wesley para que ele retorne quando disponível.`;
@@ -207,14 +207,45 @@ export const MSG_FALLBACK_COBRANCA_PRAZO = `Entendo a preocupação. O Dr. Wesle
 
 // Correção de segurança: converte terceira pessoa para primeira pessoa nos padrões mais comuns
 // (a IA às vezes escreve "a Iara vai" em vez de "vou", apesar da instrução no system prompt)
-const TERCEIRA_PESSOA_FIXES: Array<[RegExp, string]> = [
-  [/\ba\s+\*?Iara\*?\s+vai\b/gi, 'vou'],
-  [/\ba\s+\*?secretária\*?\s+vai\b/gi, 'vou'],
-  [/\ba\s+\*?Iara\*?\s+está\b/gi, 'estou'],
-  [/\ba\s+\*?Iara\*?\s+anotou\b/gi, 'anotei'],
-  [/\ba\s+\*?Iara\*?\s+verificou\b/gi, 'verifiquei'],
-  [/\ba\s+\*?Iara\*?\s+recebeu\b/gi, 'recebi'],
-];
+// A lista anterior cobria só seis verbos, então bastava a IA escrever um sétimo
+// para a terceira pessoa passar. Agora é uma varredura: qualquer "a Iara <verbo>"
+// ou "a secretária <verbo>" é convertido para primeira pessoa.
+const VERBOS_3P_PARA_1P: Record<string, string> = {
+  vai: 'vou', irá: 'irei', ira: 'irei', está: 'estou', esta: 'estou', estará: 'estarei',
+  pode: 'posso', poderá: 'poderei', fará: 'farei', tem: 'tenho', terá: 'terei',
+  anotou: 'anotei', anota: 'anoto', anotará: 'anotarei',
+  verificou: 'verifiquei', verifica: 'verifico', verificará: 'verificarei',
+  recebeu: 'recebi', recebe: 'recebo', receberá: 'receberei',
+  informou: 'informei', informa: 'informo', informará: 'informarei',
+  repassou: 'repassei', repassa: 'repasso', repassará: 'repassarei',
+  registrou: 'registrei', registra: 'registro', registrará: 'registrarei',
+  encaminhou: 'encaminhei', encaminha: 'encaminho', encaminhará: 'encaminharei',
+  enviou: 'enviei', envia: 'envio', enviará: 'enviarei',
+  retornou: 'retornei', retorna: 'retorno', retornará: 'retornarei',
+  confirmou: 'confirmei', confirma: 'confirmo', confirmará: 'confirmarei',
+  acompanhou: 'acompanhei', acompanha: 'acompanho', acompanhará: 'acompanharei',
+  falou: 'falei', fala: 'falo', falará: 'falarei',
+  entrou: 'entrei', entra: 'entro', entrará: 'entrarei',
+  consultou: 'consultei', consulta: 'consulto', consultará: 'consultarei',
+  agradeceu: 'agradeci', agradece: 'agradeço',
+};
+
+// Vírgula depois do nome é autoapresentação ("a *Iara*, *secretária* do Dr."),
+// que é permitida — por isso o padrão exige um verbo logo em seguida
+const RE_TERCEIRA_PESSOA = /\b([Aa])\s+\*?(?:Iara|secretária)\*?\s+((?:já|ja|também|tambem|ainda|sempre|apenas|só|so|logo)\s+)?(\*?)([a-zà-ÿá-ú]+)(\*?)/gu;
+
+function corrigirTerceiraPessoa(texto: string): string {
+  return texto.replace(RE_TERCEIRA_PESSOA, (todo, artigo, adverbio, abre, verbo, fecha) => {
+    const novo = VERBOS_3P_PARA_1P[verbo.toLowerCase()];
+    if (!novo) return todo; // não é verbo conhecido: não arrisca alterar o sentido
+    const adv = adverbio || '';
+    // Mantém maiúscula quando a frase começava ali ("A Iara já anotou" -> "Já anotei")
+    const primeiro = adv ? adv.trimEnd() : novo;
+    const resto = adv ? `${novo}` : '';
+    const capitalizado = artigo === 'A' ? primeiro.charAt(0).toUpperCase() + primeiro.slice(1) : primeiro;
+    return adv ? `${capitalizado} ${abre}${resto}${fecha}` : `${abre}${capitalizado}${fecha}`;
+  });
+}
 
 export function aplicarGlossario(texto: string): string {
   // Textos definidos por Wesley saem exatamente como ele escreveu. O filtro existe
@@ -237,9 +268,7 @@ export function aplicarGlossario(texto: string): string {
   for (const re of FRASES_PROIBIDAS) {
     resultado = resultado.replace(re, '').replace(/\s{2,}/g, ' ').trim();
   }
-  for (const [padrao, correto] of TERCEIRA_PESSOA_FIXES) {
-    resultado = resultado.replace(padrao, correto);
-  }
+  resultado = corrigirTerceiraPessoa(resultado);
   // Remove tags HTML (a IA às vezes gera <br> em vez de quebra de linha real)
   resultado = resultado.replace(/<br\s*\/?>/gi, '\n').replace(/<\/?[a-z][^>]*>/gi, '');
   // Remove saudação/autoapresentação redundante no início (a saudação do dia já é enviada
@@ -285,7 +314,7 @@ REGRAS ABSOLUTAS (nunca violar):
 8. Nunca usar expressões de entusiasmo forçado ou artificial: "fico feliz em ajudar", "é um prazer ajudar", "ficarei feliz", "com prazer", "que bom falar com você", "adoraria ajudar" ou qualquer variação. O tom é profissional e cordial, nunca efusivo ou falso
 9. Nunca usar tags HTML como <br>, <b>, <i> etc. Para separar parágrafos, use apenas quebra de linha simples (linha em branco)
 10. Nunca inicie a resposta com saudação ("Bom dia", "Boa tarde", "Boa noite", "Olá") nem com autoapresentação ("Aqui é a Iara, secretária do Dr. Wesley"). Isso já foi feito uma única vez pelo sistema no início da conversa do dia. Vá direto ao assunto da mensagem do cliente
-11. JAMAIS sugerir, em qualquer hipótese, que o cliente ligue ou entre em contato diretamente com o Dr. Wesley pelo telefone. A resolução é sempre puxada para a *Iara*: se o cliente cobrar demora, explique que o Dr. Wesley atende muitos casos e clientes, que o retorno ocorre em até 1 dia útil, e que ela mesma vai continuar acompanhando e cobrando internamente. Nunca terceirizar o contato para o cliente
+11. JAMAIS sugerir, em qualquer hipótese, que o cliente ligue ou entre em contato diretamente com o Dr. Wesley pelo telefone. A resolução é sempre sua: se o cliente cobrar demora, explique que o Dr. Wesley atende muitos casos e clientes, que o retorno ocorre em até 1 dia útil, e que VOCÊ vai continuar acompanhando e cobrando internamente (em primeira pessoa: "vou acompanhar", nunca "a Iara vai acompanhar"). Nunca terceirizar o contato para o cliente
 13. Atendimento FORMAL, CURTO e DIRETO. Um parágrafo, no máximo 3 frases. Nada de acolhimento, empatia encenada ou sentimentalismo ("compreendo sua preocupação", "imagino como deve ser difícil", "fique tranquilo", "sinto muito"). Responda o que foi perguntado e pare
 14. NUNCA repita o teor de algo que já foi dito nesta conversa, nem reformulado com outras palavras. Se o cliente mandar várias mensagens seguidas, responda o conjunto UMA vez. Se não há nada novo a acrescentar, prefira uma resposta mínima a repetir o que já foi falado
 12. Fale SEMPRE em primeira pessoa quando se referir a si mesma. Errado: "A Iara vai anotar tudo", "A secretária vai verificar". Certo: "Vou anotar tudo", "Vou verificar". Use "*Iara*"/"*secretária*" na terceira pessoa apenas na autoapresentação inicial (feita pelo sistema) — depois disso, sempre "eu", "vou", "verifiquei", nunca "ela", "a Iara vai"
