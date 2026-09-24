@@ -30,7 +30,10 @@ export function montarMensagem(tipo: string, nome: string, dataIso: string, proc
       `Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.`;
   }
 
-  return `${tratamento} Passando para avisar que temos um prazo a cumprir no seu processo (${processo}) até ${data}. ` +
+  // Nem todo card tem número de processo (recurso administrativo, multa) — sem
+  // ele a mensagem sai sem o parêntese, em vez de mostrar um vazio ao cliente
+  const referencia = processo ? ` (${processo})` : '';
+  return `${tratamento} Passando para avisar que temos um prazo a cumprir no seu processo${referencia} até ${data}. ` +
     `Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.`;
 }
 
@@ -73,11 +76,11 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
       });
       if (!naJanela.length) continue;
 
-      const processo = extrairNumeroProcesso(`${card.name || ''} ${card.desc || ''}`);
-      if (!processo) {
-        res.semData.push({ card: String(card.name || '').slice(0, 90) });
-        continue;
-      }
+      // Card sem número de processo (recurso administrativo, multa de trânsito)
+      // também entra: está numa das listas, então é trabalho a avisar. Só não
+      // tem como ser procurado na planilha.
+      const processo = extrairNumeroProcesso(`${card.name || ''} ${card.desc || ''}`) || '';
+      if (!processo) res.semData.push({ card: String(card.name || '').slice(0, 90) });
 
       // Sem cadastro na planilha o aviso ENTRA na fila do mesmo jeito, marcado
       // para Wesley completar o contato — deixar de fora escondia justamente os

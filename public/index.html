@@ -912,8 +912,9 @@
       txt = trat + ' Passando para lembrar que a audiência do seu processo está marcada para ' + quando +
             '. Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.';
     } else {
-      txt = trat + ' Passando para avisar que temos um prazo a cumprir no seu processo (' + a.processo +
-            ') até ' + data + '. Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.';
+      const ref = a.processo ? (' (' + a.processo + ')') : '';
+      txt = trat + ' Passando para avisar que temos um prazo a cumprir no seu processo' + ref +
+            ' até ' + data + '. Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.';
     }
     document.getElementById('msg-'+id).value = txt;
   }
