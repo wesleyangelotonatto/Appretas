@@ -876,19 +876,42 @@
         '</div>' +
         alerta +
         '<div style="margin:6px 0;">'+opcoes+'</div>' +
-        '<textarea id="msg-'+a.id+'" rows="4" style="width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px;font-size:13px;">'+escHtml(a.mensagem||'')+'</textarea>' +
-        '<div style="display:flex;gap:8px;margin-top:6px;align-items:center;">' +
+        '<div id="txt-'+a.id+'" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;font-size:13px;white-space:pre-wrap;">'+escHtml(a.mensagem||'')+'</div>' +
+        '<textarea id="msg-'+a.id+'" rows="4" style="display:none;width:100%;background:var(--surface2);border:1px solid var(--blue);color:var(--text);padding:8px;border-radius:6px;font-size:13px;">'+escHtml(a.mensagem||'')+'</textarea>' +
+        '<div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap;">' +
           '<button class="btn btn-followup" onclick="aprovarAviso('+a.id+')">Confirmar e Enviar</button>' +
+          '<button class="btn btn-pause" id="btn-editar-'+a.id+'" onclick="editarAviso('+a.id+')">Editar</button>' +
           '<button class="btn" style="background:var(--surface2);font-size:11px;" onclick="refazerMensagem('+a.id+')">Refazer texto com a data escolhida</button>' +
           '<button class="btn" style="background:#c0392b;color:#fff" onclick="descartarAviso('+a.id+')">Descartar</button>' +
         '</div></div>';
     }).join('');
   }
 
+  // Mostra a area editavel; o texto exibido acima some para nao duplicar
+  // Texto que vale: o da area editavel se estiver aberta, senao o exibido
+  function textoAtualAviso(id) {
+    const area = document.getElementById('msg-'+id);
+    return area && area.style.display !== 'none' ? area.value : document.getElementById('txt-'+id).textContent;
+  }
+
+  function editarAviso(id) {
+    const area = document.getElementById('msg-'+id);
+    const texto = document.getElementById('txt-'+id);
+    const btn = document.getElementById('btn-editar-'+id);
+    if (area.style.display === 'none') {
+      area.style.display = 'block'; texto.style.display = 'none';
+      btn.textContent = 'Ver texto'; area.focus();
+    } else {
+      texto.textContent = area.value; // mantem o que foi digitado
+      area.style.display = 'none'; texto.style.display = 'block';
+      btn.textContent = 'Editar';
+    }
+  }
+
   async function salvarContatoAviso(id) {
     const nome = document.getElementById('nome-'+id).value.trim();
     const phone = document.getElementById('fone-'+id).value.trim();
-    const mensagem = document.getElementById('msg-'+id).value;
+    const mensagem = textoAtualAviso(id);
     const r = await fetch('/command/avisos/'+id+'/contato', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ nome, phone, mensagem })
@@ -905,27 +928,31 @@
     const a = avisos.find(x => x.id === id);
     const sel = document.querySelector('input[name="data-'+id+'"]:checked');
     if (!a || !sel) return;
-    const nome = document.getElementById('nome-'+id).value.trim();
+    const nomeCompleto = document.getElementById('nome-'+id).value.trim();
+    const nome = nomeCompleto ? nomeCompleto.split(/\s+/)[0] : '';
     const dt = new Date(sel.value);
     const data = dt.toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'});
     const hora = dt.toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'});
     const trat = nome ? ('Olá, ' + nome + '!') : 'Olá!';
+    const partes = a.partes ? (' (' + a.partes + ')') : '';
+    const juizo = a.juizo ? (', na ' + a.juizo + ',') : '';
     let txt;
     if (a.tipo === 'audiencia') {
       const quando = hora === '00:00' ? ('o dia ' + data) : ('o dia ' + data + ', às ' + hora);
-      txt = trat + ' Passando para lembrar que a audiência do seu processo está marcada para ' + quando +
+      txt = trat + ' Passando para lembrar que a audiência do seu processo' + partes + juizo + ' está marcada para ' + quando +
             '. Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.';
     } else {
-      const ref = a.processo ? (' (' + a.processo + ')') : '';
-      txt = trat + ' Passando para avisar que temos um prazo a cumprir no seu processo' + ref +
+      const ref = a.partes ? (' ' + a.partes) : (a.processo ? (' (' + a.processo + ')') : '');
+      txt = trat + ' Passando para avisar que temos um prazo a cumprir no seu processo' + ref + juizo +
             ' até ' + data + '. Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.';
     }
     document.getElementById('msg-'+id).value = txt;
+    document.getElementById('txt-'+id).textContent = txt;
   }
 
   async function aprovarAviso(id) {
     const sel = document.querySelector('input[name="data-'+id+'"]:checked');
-    const msg = document.getElementById('msg-'+id).value;
+    const msg = textoAtualAviso(id);
     const nome = document.getElementById('nome-'+id).value.trim();
     const phone = document.getElementById('fone-'+id).value.trim();
     const r = await (await fetch('/command/avisos/'+id+'/aprovar', {

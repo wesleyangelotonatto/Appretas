@@ -18,22 +18,69 @@ export function formatarHora(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { timeZone: TZ(), hour: '2-digit', minute: '2-digit' });
 }
 
-export function montarMensagem(tipo: string, nome: string, dataIso: string, processo: string): string {
+const CONECTIVOS = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'x']);
+
+// Nomes vêm da planilha e dos cards em CAIXA ALTA ("EDIVANDRO CARLOS MARQUES").
+// Escrever assim na mensagem soa como grito, então normaliza.
+export function formatarNomeProprio(texto: string): string {
+  return String(texto || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p, i) => (i > 0 && CONECTIVOS.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(' ');
+}
+
+// Só o primeiro nome no tratamento: "EDIVANDRO CARLOS MARQUES" -> "Edivandro"
+export function primeiroNome(nome: string): string {
+  const limpo = String(nome || '').trim();
+  if (!limpo) return '';
+  return formatarNomeProprio(limpo.split(/\s+/)[0]);
+}
+
+// Partes do processo a partir do título do card ("FULANO X BELTRANO")
+export function extrairPartes(titulo: string): string {
+  let t = String(titulo || '').replace(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}/g, '').replace(/\d{20}/g, '');
+  const segmentos = t.split(/\s+[-–—]\s+/).map(s => s.trim()).filter(Boolean);
+  const comX = segmentos.find(s => /\s+[xX]\s+/.test(s));
+  if (!comX) return '';
+  const [a, b] = comX.split(/\s+[xX]\s+/);
+  if (!a || !b) return '';
+  return `${formatarNomeProprio(a)} x ${formatarNomeProprio(b)}`;
+}
+
+// Juízo/vara, quando o card informa
+const RE_JUIZO = /\b(\d+[ªa°o]?\s*)?(vara|juizado|comarca|tribunal|turma|c[âa]mara|f[óo]rum)\b/i;
+export function extrairJuizo(texto: string): string {
+  const segmentos = String(texto || '').split(/\s+[-–—]\s+|\n/).map(s => s.trim()).filter(Boolean);
+  const achado = segmentos.find(s => RE_JUIZO.test(s) && s.length < 80);
+  return achado ? formatarNomeProprio(achado) : '';
+}
+
+export function montarMensagem(
+  tipo: string,
+  nome: string,
+  dataIso: string,
+  processo: string,
+  extras: { partes?: string; juizo?: string } = {}
+): string {
   const data = formatarData(dataIso);
   const hora = formatarHora(dataIso);
-  const tratamento = nome ? `Olá, ${nome}!` : 'Olá!';
+  const tratamento = primeiroNome(nome) ? `Olá, ${primeiroNome(nome)}!` : 'Olá!';
+  const partes = extras.partes ? ` (${extras.partes})` : '';
+  const juizo = extras.juizo ? `, na ${extras.juizo},` : '';
 
   if (tipo === 'audiencia') {
     // Meia-noite quase sempre significa que a hora não foi informada na fonte
     const quando = hora === '00:00' ? `o dia ${data}` : `o dia ${data}, às ${hora}`;
-    return `${tratamento} Passando para lembrar que a audiência do seu processo está marcada para ${quando}. ` +
+    return `${tratamento} Passando para lembrar que a audiência do seu processo${partes}${juizo} está marcada para ${quando}. ` +
       `Qualquer dúvida sobre o que vai acontecer nela, pode me chamar aqui que eu explico.`;
   }
 
   // Nem todo card tem número de processo (recurso administrativo, multa) — sem
   // ele a mensagem sai sem o parêntese, em vez de mostrar um vazio ao cliente
-  const referencia = processo ? ` (${processo})` : '';
-  return `${tratamento} Passando para avisar que temos um prazo a cumprir no seu processo${referencia} até ${data}. ` +
+  const referencia = extras.partes ? ` ${extras.partes}` : (processo ? ` (${processo})` : '');
+  return `${tratamento} Passando para avisar que temos um prazo a cumprir no seu processo${referencia}${juizo} até ${data}. ` +
     `Não é nada para se preocupar: é só para você saber que estamos cuidando e dando andamento. Fico à disposição.`;
 }
 
@@ -91,6 +138,11 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
       const phone = cadastrado ? cliente!.phone : '';
       if (!cadastrado) res.semCadastro.push({ card: String(card.name || '').slice(0, 90), processo });
 
+      // Partes e juízo saem do card: identificam o caso na mensagem, para o
+      // cliente saber de qual processo se trata sem precisar do número
+      const partes = extrairPartes(card.name || '');
+      const juizo = extrairJuizo(`${card.name || ''} - ${card.desc || ''}`);
+
       // Sugere a data mais próxima, mas todas vão para a tela — Wesley escolhe
       const sugerida = naJanela[0].dataIso;
       const criado = salvarAvisoPendente({
@@ -101,8 +153,10 @@ export async function gerarAvisosParaConfirmacao(dias = 15): Promise<ResultadoVa
         phone,
         nome,
         datasJson: JSON.stringify(naJanela),
-        mensagem: montarMensagem(tipo, nome, sugerida, processo),
+        mensagem: montarMensagem(tipo, nome, sugerida, processo, { partes, juizo }),
         cadastrado,
+        partes,
+        juizo,
       });
       if (criado) res.criados++;
     }

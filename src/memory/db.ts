@@ -123,6 +123,8 @@ export async function initDb(): Promise<void> {
       mensagem TEXT,
       status TEXT DEFAULT 'pendente',   -- pendente | enviado | descartado
       cadastrado INTEGER DEFAULT 1,     -- 0 = processo não está na planilha
+      partes TEXT,                      -- "Fulano x Beltrano", tirado do card
+      juizo TEXT,                       -- vara/comarca, quando o card informa
       created_at INTEGER DEFAULT (unixepoch()),
       UNIQUE(card_id, tipo)
     );
@@ -172,6 +174,8 @@ export async function initDb(): Promise<void> {
   // só entra por ALTER. Sem isso, um banco criado por uma versão anterior fica
   // sem a coluna e toda gravação falha ("has no column named ...").
   garantirColuna('avisos_pendentes', 'cadastrado', 'INTEGER DEFAULT 1');
+  garantirColuna('avisos_pendentes', 'partes', 'TEXT');
+  garantirColuna('avisos_pendentes', 'juizo', 'TEXT');
 
   limparNomesContaminados();
   console.log('[db] banco inicializado:', DB_PATH);
@@ -369,14 +373,15 @@ function garantirColuna(tabela: string, coluna: string, definicao: string) {
 export function salvarAvisoPendente(a: {
   tipo: string; cardId: string; cardNome: string; processo: string;
   phone: string; nome: string; datasJson: string; mensagem: string; cadastrado: boolean;
+  partes?: string; juizo?: string;
 }): boolean {
   // UNIQUE(card_id, tipo): reexecutar a varredura não duplica o que já está na fila
   const r = getDb().prepare(`
     INSERT OR IGNORE INTO avisos_pendentes
-      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (tipo, card_id, card_nome, processo, phone, nome, datas_json, mensagem, cadastrado, partes, juizo)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(a.tipo, a.cardId, a.cardNome, a.processo, a.phone, a.nome, a.datasJson, a.mensagem,
-         a.cadastrado ? 1 : 0);
+         a.cadastrado ? 1 : 0, a.partes || '', a.juizo || '');
   return r.changes > 0;
 }
 
