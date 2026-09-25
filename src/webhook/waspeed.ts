@@ -143,11 +143,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const filename: string | undefined = det.filename || det.caption || undefined;
     const mimetype: string | undefined = det.mimetype || det.mimeType || undefined;
 
-    console.log('[webhook] payload recebido:', JSON.stringify(payload).slice(0, 300));
-    console.log('[webhook] from:', from, '| fromMe:', fromMe, '| isGroup:', isGroup, '| body:', body.slice(0, 80));
-    if (messageType === 'audio' || messageType === 'ptt' || messageType === 'document' || messageType === 'image') {
-      console.log('[webhook] mídia — type:', messageType, '| eventDetails keys:', Object.keys(det), '| base64 length:', base64?.length || 0, '| mimetype:', mimetype);
-    }
+    console.log('[webhook] from:', from, '| type:', messageType, '| fromMe:', fromMe, '| body:', body.slice(0, 80));
 
     // Ignora eventos que não são mensagens reais (reações, confirmações de leitura, etc.)
     // — sem texto e sem mídia não há nada para processar
