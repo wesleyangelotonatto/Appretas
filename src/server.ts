@@ -25,7 +25,7 @@ export const io = new SocketIO(server, {
 });
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '200mb' }));
 // O painel é um arquivo só, e o navegador o guardava em cache: toda mudança de
 // tela exigia Ctrl+F5 para aparecer, o que já causou confusão (botão novo
 // publicado e invisível na tela). Agora o HTML é sempre revalidado.
@@ -37,6 +37,16 @@ app.use(express.static(path.join(__dirname, '../public'), {
 
 // Disponibiliza io para os módulos via app.locals
 app.locals.io = io;
+
+// Payload muito grande: loga e descarta sem derrubar o processo
+app.use((err: any, _req: any, res: any, next: any) => {
+  if (err.type === 'entity.too.large') {
+    console.warn('[webhook] payload rejeitado — arquivo muito grande (>200MB):', err.length || '?', 'bytes');
+    res.status(413).json({ status: 'ignored', reason: 'payload too large' });
+    return;
+  }
+  next(err);
+});
 
 // Rotas
 app.use('/webhook', webhookRouter);
