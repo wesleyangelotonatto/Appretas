@@ -25,7 +25,7 @@ export const io = new SocketIO(server, {
 });
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 // O painel é um arquivo só, e o navegador o guardava em cache: toda mudança de
 // tela exigia Ctrl+F5 para aparecer, o que já causou confusão (botão novo
 // publicado e invisível na tela). Agora o HTML é sempre revalidado.
