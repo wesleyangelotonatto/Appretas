@@ -1,6 +1,6 @@
 import { getCardsAudiencias, adicionarNotaCard, extrairTelefoneDeTexto } from '../integrations/trello';
 import { sendMessage } from '../responder/send';
-import { lookupSheets } from '../lookup/sheets';
+import { lookupSheets, lookupSheetsPorProcesso } from '../lookup/sheets';
 
 // 3 ALERTAS:
 // 1º: quando card é criado (disparado pelo orchestrator ao detectar novo card)
@@ -28,11 +28,28 @@ export async function cronAudiencias(): Promise<void> {
       const audienciaDate = extractDateFromCard(card);
       if (!audienciaDate) continue;
 
-      const phone = extrairTelefoneDeTexto(card.desc || '');
-      if (!phone) continue;
+      let phone = extrairTelefoneDeTexto(card.desc || '');
+      let clientName = 'cliente';
 
-      const contact = await lookupSheets(phone);
-      const clientName = contact?.name || 'cliente';
+      if (phone) {
+        const contact = await lookupSheets(phone);
+        clientName = contact?.name || 'cliente';
+      } else {
+        // Sem telefone no card — tenta encontrar pelo número do processo na planilha
+        const processo = extractProcessFromCard(card);
+        if (!processo) {
+          console.warn(`[cron-audiencias] card sem telefone e sem processo: "${card.name}"`);
+          continue;
+        }
+        const contact = await lookupSheetsPorProcesso(processo);
+        if (!contact?.phone) {
+          console.warn(`[cron-audiencias] processo ${processo} não encontrado na planilha — card: "${card.name}"`);
+          continue;
+        }
+        phone = contact.phone;
+        clientName = contact.name || 'cliente';
+        console.log(`[cron-audiencias] telefone via planilha para "${card.name}": ${phone} (${clientName})`);
+      }
 
       // Diferença em dias de calendário (São Paulo), não em horas cruas — evita
       // desvio de fuso horário entre o epoch de "today" (já deslocado) e audienciaDate (UTC real)

@@ -1,6 +1,6 @@
 import { getCardsPrazos, adicionarNotaCard, extrairTelefoneDeTexto } from '../integrations/trello';
 import { sendMessage } from '../responder/send';
-import { lookupSheets } from '../lookup/sheets';
+import { lookupSheets, lookupSheetsPorProcesso } from '../lookup/sheets';
 
 // Prazos: verifica lista PRAZOS no Trello todos os dias úteis às 08h
 // Envia aviso ao cliente no dia do prazo
@@ -27,18 +27,36 @@ export async function cronPrazos(): Promise<void> {
 
       if (!isToday) continue;
 
-      const phone = extrairTelefoneDeTexto(card.desc || '');
-      if (!phone) continue;
-
-      const contact = await lookupSheets(phone);
+      let phone = extrairTelefoneDeTexto(card.desc || '');
+      let clientName = '';
       const processInfo = extractProcessFromCard(card) || card.name;
+
+      if (phone) {
+        const contact = await lookupSheets(phone);
+        clientName = contact?.name || '';
+      } else {
+        // Sem telefone no card — tenta encontrar pelo número do processo na planilha
+        const processo = extractProcessFromCard(card);
+        if (!processo) {
+          console.warn(`[cron-prazos] card sem telefone e sem processo: "${card.name}"`);
+          continue;
+        }
+        const contact = await lookupSheetsPorProcesso(processo);
+        if (!contact?.phone) {
+          console.warn(`[cron-prazos] processo ${processo} não encontrado na planilha — card: "${card.name}"`);
+          continue;
+        }
+        phone = contact.phone;
+        clientName = contact.name || '';
+        console.log(`[cron-prazos] telefone via planilha para "${card.name}": ${phone} (${clientName})`);
+      }
 
       const msg = `Olá, tudo bem? Aqui é a Iara Secretária do Dr. Wesley. Somente passando pra te avisar que na data de hoje nós vamos cumprir um prazo aqui no seu processo (${processInfo}). Não é nada pra se preocupar. É só pra te mostrar que estamos cuidando do processo e dando andamento nele. Obrigado, qualquer dúvida fico à disposição.`;
 
       await sendMessage(phone, msg);
       await adicionarNotaCard(card.id, `[IARA] Aviso de prazo enviado ao cliente em ${today.toLocaleDateString('pt-BR')}`);
 
-      console.log(`[cron-prazos] aviso enviado para ${contact?.name || phone}`);
+      console.log(`[cron-prazos] aviso enviado para ${clientName || phone}`);
     } catch (err) {
       console.error('[cron-prazos] erro ao processar card:', card.id, err);
     }
