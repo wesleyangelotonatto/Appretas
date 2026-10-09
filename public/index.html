@@ -129,7 +129,7 @@
 <header>
   <div class="status-dot" id="conn-dot" style="background:var(--red)"></div>
   <h1>Iara — Secretária Virtual</h1>
-  <span id="mode-badge" class="mode-badge">MODO TREINO</span>
+  <span id="mode-badge" class="mode-badge" style="display:none">MODO TREINO</span>
   <button id="btn-secretaria" onclick="toggleSecretaria()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--green);background:#0a2d10;color:var(--green);cursor:pointer;">Secretária: Ativa</button>
   <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
   <button id="btn-groups" onclick="toggleGroupsModal()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #3498db;background:#0a1a2d;color:#3498db;cursor:pointer;">Grupos</button>
@@ -1059,14 +1059,17 @@
   function updateCalibragemBtn(total) {
     const btn = document.getElementById('btn-calibragem');
     const faixa = document.getElementById('faixa-calibragem');
+    const badge = document.getElementById('mode-badge');
     if (calibragemAtiva) {
       btn.style.background = '#2d1a0a'; btn.style.borderColor = 'var(--orange)'; btn.style.color = 'var(--orange)';
       btn.textContent = 'MODO TREINO' + (total ? ' (' + total + ')' : '');
       faixa.style.display = 'block';
+      if (badge) badge.style.display = '';
     } else {
       btn.style.background = 'var(--surface2)'; btn.style.borderColor = 'var(--border)'; btn.style.color = 'var(--text-muted)';
       btn.textContent = 'Modo Treino: desligado';
       faixa.style.display = 'none';
+      if (badge) badge.style.display = 'none';
     }
   }
 
