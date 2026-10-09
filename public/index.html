@@ -134,7 +134,7 @@
   <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
   <button id="btn-groups" onclick="toggleGroupsModal()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #3498db;background:#0a1a2d;color:#3498db;cursor:pointer;">Grupos</button>
   <button id="btn-avisos" onclick="abrirAvisos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--blue);background:#0a1d2d;color:var(--blue);cursor:pointer;">Audiências/Prazos (<span id="avisos-count">0</span>)</button>
-  <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Calibragem: desligada</button>
+  <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Modo Treino: desligado</button>
   <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
   <button onclick="abrirRelatorios()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #9b59b6;background:#1a0a2d;color:#9b59b6;cursor:pointer;">Relatórios</button>
   <div class="integration-status">
@@ -812,9 +812,29 @@
     }
   }
 
+  // Modal de confirmação inline — substitui confirm() que alguns navegadores bloqueiam
+  function modalConfirm(titulo, texto) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center';
+      overlay.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;max-width:380px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+        <div style="font-size:15px;font-weight:600;margin-bottom:10px;color:var(--text)">${titulo}</div>
+        <div style="font-size:13px;color:var(--text-muted);white-space:pre-line;margin-bottom:20px">${texto}</div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button id="mc-cancel" style="padding:7px 16px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;font-size:13px">Cancelar</button>
+          <button id="mc-ok" style="padding:7px 16px;border-radius:6px;border:none;background:var(--blue);color:#fff;cursor:pointer;font-size:13px;font-weight:600">Confirmar</button>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      overlay.querySelector('#mc-ok').onclick = () => { document.body.removeChild(overlay); resolve(true); };
+      overlay.querySelector('#mc-cancel').onclick = () => { document.body.removeChild(overlay); resolve(false); };
+    });
+  }
+
   async function toggleSecretaria() {
     if (secretariaAtiva) {
-      if (!confirm('Pausar a secretária? Nenhuma mensagem será enviada aos clientes até você reativar.')) return;
+      const ok = await modalConfirm('Pausar a secretária?', 'Nenhuma mensagem será enviada aos clientes até você reativar.');
+      if (!ok) return;
       await fetch('/command/secretaria/pausar', {method:'POST'});
       secretariaAtiva = false;
     } else {
@@ -1041,22 +1061,24 @@
     const faixa = document.getElementById('faixa-calibragem');
     if (calibragemAtiva) {
       btn.style.background = '#2d1a0a'; btn.style.borderColor = 'var(--orange)'; btn.style.color = 'var(--orange)';
-      btn.textContent = 'CALIBRAGEM' + (total ? ' (' + total + ')' : '');
+      btn.textContent = 'MODO TREINO' + (total ? ' (' + total + ')' : '');
       faixa.style.display = 'block';
     } else {
       btn.style.background = 'var(--surface2)'; btn.style.borderColor = 'var(--border)'; btn.style.color = 'var(--text-muted)';
-      btn.textContent = 'Calibragem: desligada';
+      btn.textContent = 'Modo Treino: desligado';
       faixa.style.display = 'none';
     }
   }
 
   async function toggleCalibragem() {
     if (calibragemAtiva) {
-      if (!confirm('Desligar a calibragem? A partir daí as mensagens voltam a ser enviadas aos clientes de verdade.')) return;
+      const ok = await modalConfirm('Desligar o Modo Treino?', 'A partir daí as respostas voltam a ser enviadas diretamente aos clientes, sem aprovação.');
+      if (!ok) return;
       await fetch('/command/calibragem/desativar', {method:'POST'});
       calibragemAtiva = false;
     } else {
-      if (!confirm('Ligar o modo calibragem?\n\nNenhuma mensagem chegara a qualquer cliente. As respostas que voce revisar ficam guardadas em um banco separado, so para treinamento.\n\nResumos diarios, notas e salvamento no Drive continuam funcionando.')) return;
+      const ok = await modalConfirm('Ligar o Modo Treino?', 'Nenhuma mensagem chegará a qualquer cliente. As respostas ficam guardadas só para treinamento.\n\nResumos diários, Drive e notas continuam funcionando normalmente.');
+      if (!ok) return;
       await fetch('/command/calibragem/ativar', {method:'POST'});
       calibragemAtiva = true;
     }
