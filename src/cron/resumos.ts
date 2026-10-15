@@ -180,21 +180,26 @@ export async function cronResumosDiarios(): Promise<void> {
   console.log(`[cron-resumos] ${salvos} resumo(s) salvo(s), ${erros} erro(s)`);
 }
 
-// Verifica se a última mensagem do cliente (hoje) ocorreu APÓS a última resposta
-// do Dr. Wesley — ou seja, o cliente aguarda resposta pessoal dele.
-function clienteAguardandoWesley(phone: string, inicioDia: number): boolean {
-  const db = getDb();
-  const ultimaCliente = db.prepare(
-    `SELECT created_at FROM messages WHERE phone = ? AND role = 'client' AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
-  ).get(phone, inicioDia) as { created_at: number } | undefined;
-  if (!ultimaCliente) return false;
+type UltimaResposta = 'wesley' | 'iara' | 'cliente';
 
-  const ultimaWesley = db.prepare(
-    `SELECT created_at FROM messages WHERE phone = ? AND role = 'wesley' AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
-  ).get(phone, inicioDia) as { created_at: number } | undefined;
+// Retorna quem enviou a última mensagem hoje nessa conversa
+function ultimaRespostaHoje(phone: string, inicioDia: number): UltimaResposta {
+  const ultima = getDb().prepare(
+    `SELECT role FROM messages WHERE phone = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
+  ).get(phone, inicioDia) as { role: string } | undefined;
+  if (!ultima) return 'cliente';
+  if (ultima.role === 'wesley') return 'wesley';
+  if (ultima.role === 'iara') return 'iara';
+  return 'cliente';
+}
 
-  // Aguardando se: nunca houve resposta do Wesley hoje, ou a última do cliente é mais recente
-  return !ultimaWesley || ultimaCliente.created_at > ultimaWesley.created_at;
+// Horário da última mensagem de cada remetente hoje (retorna string HH:MM ou null)
+function horarioUltima(phone: string, inicioDia: number, role: string): string | null {
+  const row = getDb().prepare(
+    `SELECT created_at FROM messages WHERE phone = ? AND role = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
+  ).get(phone, role, inicioDia) as { created_at: number } | undefined;
+  if (!row) return null;
+  return new Date(row.created_at * 1000).toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
 }
 
 // Envia às 21h um resumo consolidado do dia para o número do Dr. Wesley
@@ -209,20 +214,32 @@ export async function cronRelatorioWesley(): Promise<void> {
   const inicio = inicioDiaSaoPaulo();
   const [dia, mes, ano] = dataHoje.split('-').reverse();
 
-  const aguardando: string[] = [];
-  const encerradas: string[] = [];
+  // Agrupa por quem enviou a última mensagem
+  const grupoCliente: string[] = [];   // cliente aguardando — provável não lida
+  const grupoIara: string[] = [];      // Iara respondeu por último
+  const grupoWesley: string[] = [];    // Dr. Wesley respondeu por último
 
   resumos.forEach((r) => {
     const assunto = r.resumo.match(/Assunto principal:\s*(.+)/i)?.[1]?.trim() || '—';
     const pendencia = r.resumo.match(/Pendências:\s*(.+)/i)?.[1]?.trim() || '';
     const pendStr = pendencia && pendencia.toLowerCase() !== 'nenhuma' ? ` | ${pendencia}` : '';
-    const linha = `${r.name || r.phone} — ${assunto}${pendStr}`;
 
-    if (clienteAguardandoWesley(r.phone, inicio)) {
-      aguardando.push(linha);
-    } else {
-      encerradas.push(linha);
-    }
+    const hWesley = horarioUltima(r.phone, inicio, 'wesley');
+    const hIara   = horarioUltima(r.phone, inicio, 'iara');
+    const hCliente = horarioUltima(r.phone, inicio, 'client');
+
+    const parteHorarios = [
+      hWesley  ? `Sr. Wesley ${hWesley}`  : null,
+      hIara    ? `Iara ${hIara}`           : null,
+      hCliente ? `Cliente ${hCliente}`     : null,
+    ].filter(Boolean).join(' | ');
+
+    const linha = `${r.name || r.phone} — ${assunto}${pendStr}\n   (${parteHorarios})`;
+
+    const ultimo = ultimaRespostaHoje(r.phone, inicio);
+    if (ultimo === 'cliente') grupoCliente.push(linha);
+    else if (ultimo === 'iara') grupoIara.push(linha);
+    else grupoWesley.push(linha);
   });
 
   const partes: string[] = [
@@ -231,15 +248,21 @@ export async function cronRelatorioWesley(): Promise<void> {
     '',
   ];
 
-  if (aguardando.length) {
-    partes.push(`⚠️ AGUARDANDO SUA RESPOSTA (${aguardando.length}):`);
-    aguardando.forEach((l, i) => partes.push(`${i + 1}. ${l}`));
+  if (grupoCliente.length) {
+    partes.push(`🔴 ÚLTIMA MSG: CLIENTE — provável não lida (${grupoCliente.length}):`);
+    grupoCliente.forEach((l, i) => partes.push(`${i + 1}. ${l}`));
     partes.push('');
   }
 
-  if (encerradas.length) {
-    partes.push(`✅ IARA RESOLVEU / SEM PENDÊNCIA (${encerradas.length}):`);
-    encerradas.forEach((l, i) => partes.push(`${i + 1}. ${l}`));
+  if (grupoIara.length) {
+    partes.push(`🟡 ÚLTIMA MSG: IARA — aguardando retorno do cliente (${grupoIara.length}):`);
+    grupoIara.forEach((l, i) => partes.push(`${i + 1}. ${l}`));
+    partes.push('');
+  }
+
+  if (grupoWesley.length) {
+    partes.push(`🟢 ÚLTIMA MSG: SR. WESLEY — conversa encerrada pelo senhor (${grupoWesley.length}):`);
+    grupoWesley.forEach((l, i) => partes.push(`${i + 1}. ${l}`));
     partes.push('');
   }
 
@@ -249,7 +272,7 @@ export async function cronRelatorioWesley(): Promise<void> {
 
   try {
     await sendMessage(PHONE_WESLEY, texto, { assinar: false });
-    console.log(`[cron-relatorio] relatório enviado para ${PHONE_WESLEY} (${resumos.length} contatos, ${aguardando.length} aguardando)`);
+    console.log(`[cron-relatorio] relatório enviado — ${grupoCliente.length} p/ Wesley, ${grupoIara.length} p/ retorno cliente, ${grupoWesley.length} encerradas`);
   } catch (err) {
     console.error('[cron-relatorio] erro ao enviar relatório:', err);
   }
