@@ -353,9 +353,14 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
       return;
     }
 
-    // 12b. E-mail e PIX: resposta fixa (não gerada por IA) para nunca inventar/errar o dado
-    const pedidoPix = /\bpix\b/i.test(textBody);
-    const pedidoEmail = !pedidoPix && /e-?mail/i.test(textBody);
+    // 12b. E-mail e PIX: resposta fixa (não gerada por IA) para nunca inventar/errar o dado.
+    // Apenas dispara quando a mensagem pede explicitamente o dado — mencionar a palavra "email"
+    // num contexto jurídico/narrativo (ex: "foi direcionado para o email dele") não deve acionar.
+    const pedidoPix = /\bpix\b/i.test(textBody) &&
+      /(?:qual|me\s+pass[ae]|mand[ae]|send[ae]|informa|dado[s]?|chave|pagar|pagamento|transferi)/i.test(textBody);
+    const pedidoEmail = !pedidoPix &&
+      /e-?mail/i.test(textBody) &&
+      /(?:qual|me\s+pass[ae]|mand[ae]|send[ae]|informa|qual\s+[eéè]|pode\s+pass[ae]|pode\s+me\s+(?:dar|pass[ae]|mand[ae])|endere[cç]o\s+de\s+e-?mail|contato)/i.test(textBody);
     if (pedidoPix || pedidoEmail) {
       await deliverOrQueue(phone, pedidoPix ? MSG_PIX : MSG_EMAIL, pedidoPix ? 'pedido_pix' : 'pedido_email', io, contact?.name);
       return;
