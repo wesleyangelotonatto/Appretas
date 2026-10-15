@@ -180,6 +180,23 @@ export async function cronResumosDiarios(): Promise<void> {
   console.log(`[cron-resumos] ${salvos} resumo(s) salvo(s), ${erros} erro(s)`);
 }
 
+// Verifica se a última mensagem do cliente (hoje) ocorreu APÓS a última resposta
+// do Dr. Wesley — ou seja, o cliente aguarda resposta pessoal dele.
+function clienteAguardandoWesley(phone: string, inicioDia: number): boolean {
+  const db = getDb();
+  const ultimaCliente = db.prepare(
+    `SELECT created_at FROM messages WHERE phone = ? AND role = 'client' AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
+  ).get(phone, inicioDia) as { created_at: number } | undefined;
+  if (!ultimaCliente) return false;
+
+  const ultimaWesley = db.prepare(
+    `SELECT created_at FROM messages WHERE phone = ? AND role = 'wesley' AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
+  ).get(phone, inicioDia) as { created_at: number } | undefined;
+
+  // Aguardando se: nunca houve resposta do Wesley hoje, ou a última do cliente é mais recente
+  return !ultimaWesley || ultimaCliente.created_at > ultimaWesley.created_at;
+}
+
 // Envia às 21h um resumo consolidado do dia para o número do Dr. Wesley
 export async function cronRelatorioWesley(): Promise<void> {
   const dataHoje = hojeStr();
@@ -189,29 +206,50 @@ export async function cronRelatorioWesley(): Promise<void> {
     return;
   }
 
+  const inicio = inicioDiaSaoPaulo();
   const [dia, mes, ano] = dataHoje.split('-').reverse();
-  const linhas = resumos.map((r, i) => {
-    // Extrai assunto principal e tom da conversa do texto estruturado
+
+  const aguardando: string[] = [];
+  const encerradas: string[] = [];
+
+  resumos.forEach((r) => {
     const assunto = r.resumo.match(/Assunto principal:\s*(.+)/i)?.[1]?.trim() || '—';
-    const tom = r.resumo.match(/Tom da conversa:\s*(.+)/i)?.[1]?.trim() || '';
     const pendencia = r.resumo.match(/Pendências:\s*(.+)/i)?.[1]?.trim() || '';
-    const tomStr = tom && tom.toLowerCase() !== 'nenhuma' ? ` (${tom})` : '';
-    const pendStr = pendencia && pendencia.toLowerCase() !== 'nenhuma' ? ` | Pendente: ${pendencia}` : '';
-    return `${i + 1}. ${r.name || r.phone} — ${assunto}${tomStr}${pendStr}`;
+    const pendStr = pendencia && pendencia.toLowerCase() !== 'nenhuma' ? ` | ${pendencia}` : '';
+    const linha = `${r.name || r.phone} — ${assunto}${pendStr}`;
+
+    if (clienteAguardandoWesley(r.phone, inicio)) {
+      aguardando.push(linha);
+    } else {
+      encerradas.push(linha);
+    }
   });
 
-  const texto = [
+  const partes: string[] = [
     `RELATÓRIO DO DIA — ${dia}/${mes}/${ano}`,
     `${resumos.length} conversa(s) registrada(s)`,
     '',
-    ...linhas,
-    '',
-    'Resumos detalhados disponíveis no painel.',
-  ].join('\n');
+  ];
+
+  if (aguardando.length) {
+    partes.push(`⚠️ AGUARDANDO SUA RESPOSTA (${aguardando.length}):`);
+    aguardando.forEach((l, i) => partes.push(`${i + 1}. ${l}`));
+    partes.push('');
+  }
+
+  if (encerradas.length) {
+    partes.push(`✅ IARA RESOLVEU / SEM PENDÊNCIA (${encerradas.length}):`);
+    encerradas.forEach((l, i) => partes.push(`${i + 1}. ${l}`));
+    partes.push('');
+  }
+
+  partes.push('Resumos detalhados disponíveis no painel.');
+
+  const texto = partes.join('\n');
 
   try {
     await sendMessage(PHONE_WESLEY, texto, { assinar: false });
-    console.log(`[cron-relatorio] relatório enviado para ${PHONE_WESLEY} (${resumos.length} contatos)`);
+    console.log(`[cron-relatorio] relatório enviado para ${PHONE_WESLEY} (${resumos.length} contatos, ${aguardando.length} aguardando)`);
   } catch (err) {
     console.error('[cron-relatorio] erro ao enviar relatório:', err);
   }
