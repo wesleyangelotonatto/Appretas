@@ -13,7 +13,7 @@ import { cronPrazos } from './cron/prazos';
 import { cronFollowUps } from './cron/followups';
 import { cronNaoRespondidos } from './cron/naorespondidos';
 import { cronResumosDiarios, cronRelatorioWesley } from './cron/resumos';
-import { getResumosDoDia, getDatasComResumo } from './memory/db';
+import { getResumosDoDia, getDatasComResumo, getDb } from './memory/db';
 import { cronAusenciaPendentes } from './cron/ausencia';
 
 const PORT = process.env.PORT || 3000;
@@ -71,6 +71,58 @@ app.get('/api/resumos/:data', (req, res) => {
     res.json(getResumosDoDia(data));
   } catch (err) {
     res.status(500).json({ error: 'Erro ao buscar resumos' });
+  }
+});
+
+// Relatório de situação atual — quem está aguardando resposta agora
+app.get('/api/situacao-atual', (_req, res) => {
+  try {
+    const db = getDb();
+    const TZ = process.env.TZ_APP || 'America/Sao_Paulo';
+    const spNow = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }));
+    const inicioDia = Math.floor(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate(), 3, 0, 0) / 1000);
+
+    // Pega todos os contatos com mensagens hoje
+    const contatos = db.prepare(`
+      SELECT DISTINCT m.phone, s.name
+      FROM messages m
+      LEFT JOIN sessions s ON s.phone = m.phone
+      WHERE m.created_at >= ?
+        AND m.role IN ('client','iara','wesley')
+      ORDER BY m.phone
+    `).all(inicioDia) as { phone: string; name: string | null }[];
+
+    const resultado = contatos.map(({ phone, name }) => {
+      const ultima = db.prepare(
+        `SELECT role, created_at FROM messages WHERE phone = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
+      ).get(phone, inicioDia) as { role: string; created_at: number } | undefined;
+
+      const fmt = (role: string) => {
+        const row = db.prepare(
+          `SELECT created_at FROM messages WHERE phone = ? AND role = ? AND created_at >= ? ORDER BY created_at DESC LIMIT 1`
+        ).get(phone, role, inicioDia) as { created_at: number } | undefined;
+        if (!row) return null;
+        return new Date(row.created_at * 1000).toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+      };
+
+      return {
+        phone,
+        name: name || null,
+        ultimaRole: ultima?.role || null,
+        ultimaTs: ultima?.created_at || null,
+        horarioWesley: fmt('wesley'),
+        horarioIara:   fmt('iara'),
+        horarioCliente: fmt('client'),
+      };
+    });
+
+    // Ordena: cliente primeiro, depois iara, depois wesley
+    const ordem: Record<string, number> = { client: 0, iara: 1, wesley: 2 };
+    resultado.sort((a, b) => (ordem[a.ultimaRole || ''] ?? 9) - (ordem[b.ultimaRole || ''] ?? 9));
+
+    res.json(resultado);
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao gerar situação atual' });
   }
 });
 

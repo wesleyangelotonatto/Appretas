@@ -1131,9 +1131,74 @@
   document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if(e.target===o) o.classList.remove('open'); }));
 
   // ─── Relatórios Diários ──────────────────────────────────────────────────────
+  function switchTab(tab) {
+    const isSituacao = tab === 'situacao';
+    document.getElementById('painel-situacao').style.display = isSituacao ? 'flex' : 'none';
+    document.getElementById('painel-historico').style.display = isSituacao ? 'none' : 'flex';
+    document.getElementById('tab-situacao').style.borderBottomColor = isSituacao ? 'var(--blue)' : 'transparent';
+    document.getElementById('tab-situacao').style.color = isSituacao ? 'var(--blue)' : 'var(--text-muted)';
+    document.getElementById('tab-situacao').style.fontWeight = isSituacao ? '600' : 'normal';
+    document.getElementById('tab-historico').style.borderBottomColor = isSituacao ? 'transparent' : 'var(--blue)';
+    document.getElementById('tab-historico').style.color = isSituacao ? 'var(--text-muted)' : 'var(--blue)';
+    document.getElementById('tab-historico').style.fontWeight = isSituacao ? 'normal' : '600';
+    if (!isSituacao) carregarDatasRelatorio();
+  }
+
+  async function carregarSituacao() {
+    const lista = document.getElementById('situacao-lista');
+    lista.innerHTML = '<div style="color:var(--text-muted);font-size:13px;">Carregando...</div>';
+    try {
+      const r = await fetch('/api/situacao-atual');
+      const dados = await r.json();
+      if (!dados.length) {
+        lista.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:16px 0;">Nenhuma conversa hoje ainda.</div>';
+        return;
+      }
+
+      const grupos = { client: [], iara: [], wesley: [] };
+      dados.forEach(d => {
+        const g = d.ultimaRole === 'client' ? 'client' : d.ultimaRole === 'iara' ? 'iara' : 'wesley';
+        grupos[g].push(d);
+      });
+
+      const renderGrupo = (titulo, cor, icone, itens) => {
+        if (!itens.length) return '';
+        const linhas = itens.map(d => {
+          const waNum = (d.phone || '').replace(/\D/g, '');
+          const horarios = [
+            d.horarioWesley  ? `<span style="color:var(--green)">Wesley ${d.horarioWesley}</span>` : null,
+            d.horarioIara    ? `<span style="color:var(--orange)">Iara ${d.horarioIara}</span>` : null,
+            d.horarioCliente ? `<span style="color:var(--blue)">Cliente ${d.horarioCliente}</span>` : null,
+          ].filter(Boolean).join(' &nbsp;·&nbsp; ');
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 14px;border-bottom:1px solid var(--border);">
+            <div>
+              <span style="font-size:13px;font-weight:600;">${escHtml(d.name || d.phone)}</span>
+              <br><span style="font-size:11px;color:var(--text-muted);">${horarios}</span>
+            </div>
+            <a href="https://wa.me/${waNum}" target="_blank"
+               style="font-size:11px;color:#25d366;background:#0a2d10;padding:3px 10px;border-radius:12px;border:1px solid #25d366;text-decoration:none;white-space:nowrap;flex-shrink:0;margin-left:12px;">📱 Abrir</a>
+          </div>`;
+        }).join('');
+        return `<div style="margin-bottom:12px;border:1px solid ${cor};border-radius:8px;overflow:hidden;">
+          <div style="background:${cor}22;padding:8px 14px;font-size:12px;font-weight:700;color:${cor};letter-spacing:.5px;">${icone} ${titulo} (${itens.length})</div>
+          ${linhas}
+        </div>`;
+      };
+
+      lista.innerHTML = [
+        renderGrupo('ÚLTIMA MSG: CLIENTE — provável não lida', '#e74c3c', '🔴', grupos.client),
+        renderGrupo('ÚLTIMA MSG: IARA — aguardando retorno', '#e67e22', '🟡', grupos.iara),
+        renderGrupo('ÚLTIMA MSG: SR. WESLEY — encerrado pelo senhor', '#2ecc71', '🟢', grupos.wesley),
+      ].join('');
+    } catch(e) {
+      lista.innerHTML = '<div style="color:var(--red);font-size:13px;">Erro ao carregar situação.</div>';
+    }
+  }
+
   async function abrirRelatorios() {
     document.getElementById('modal-relatorios').classList.add('open');
-    await carregarDatasRelatorio();
+    switchTab('situacao');
+    await carregarSituacao();
   }
 
   async function carregarDatasRelatorio() {
@@ -1199,18 +1264,38 @@
 
 <!-- Modal Relatórios Diários -->
 <div class="modal-overlay" id="modal-relatorios">
-  <div class="modal" style="max-width:800px;width:94%;max-height:88vh;display:flex;flex-direction:column;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-shrink:0;">
-      <h3 style="margin:0;">Relatórios Diários</h3>
+  <div class="modal" style="max-width:860px;width:94%;max-height:88vh;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-shrink:0;">
+      <h3 style="margin:0;">Relatórios</h3>
       <button onclick="document.getElementById('modal-relatorios').classList.remove('open')" style="background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;">✕</button>
     </div>
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-shrink:0;">
-      <label style="font-size:13px;color:var(--text-muted);">Data:</label>
-      <select id="relatorio-data-sel" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;"></select>
-      <span id="relatorio-contagem" style="font-size:12px;color:var(--text-muted);"></span>
+    <!-- Abas -->
+    <div style="display:flex;gap:4px;margin-bottom:16px;flex-shrink:0;border-bottom:1px solid var(--border);padding-bottom:0;">
+      <button id="tab-situacao" onclick="switchTab('situacao')"
+        style="padding:7px 16px;font-size:13px;border:none;border-bottom:2px solid var(--blue);background:none;color:var(--blue);cursor:pointer;font-weight:600;">Situação Atual</button>
+      <button id="tab-historico" onclick="switchTab('historico')"
+        style="padding:7px 16px;font-size:13px;border:none;border-bottom:2px solid transparent;background:none;color:var(--text-muted);cursor:pointer;">Histórico</button>
     </div>
-    <div id="relatorio-lista" style="overflow-y:auto;flex:1;padding-right:4px;">
-      <div style="color:var(--text-muted);font-size:13px;">Selecione uma data para ver os resumos.</div>
+
+    <!-- Aba: Situação Atual -->
+    <div id="painel-situacao" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-shrink:0;">
+        <span style="font-size:12px;color:var(--text-muted);">Conversas de hoje — atualizado agora</span>
+        <button onclick="carregarSituacao()" style="padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">↻ Atualizar</button>
+      </div>
+      <div id="situacao-lista"><div style="color:var(--text-muted);font-size:13px;">Carregando...</div></div>
+    </div>
+
+    <!-- Aba: Histórico -->
+    <div id="painel-historico" style="flex:1;overflow-y:auto;display:none;flex-direction:column;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-shrink:0;">
+        <label style="font-size:13px;color:var(--text-muted);">Data:</label>
+        <select id="relatorio-data-sel" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;cursor:pointer;"></select>
+        <span id="relatorio-contagem" style="font-size:12px;color:var(--text-muted);"></span>
+      </div>
+      <div id="relatorio-lista" style="overflow-y:auto;flex:1;padding-right:4px;">
+        <div style="color:var(--text-muted);font-size:13px;">Selecione uma data para ver os resumos.</div>
+      </div>
     </div>
   </div>
 </div>
