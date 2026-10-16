@@ -74,15 +74,23 @@ export async function cronAudiencias(): Promise<void> {
   }
 }
 
+// Retorna o nome do card como label legível para o cliente.
+// Remove o número do processo do nome se ele aparecer lá (o cliente não sabe o número).
+function processLabel(card: any): string {
+  const nome = (card.name || '').trim();
+  // Retira número de processo no formato 0000000-00.0000.0.00.0000 do nome
+  return nome.replace(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\s*[-–]?\s*/g, '').trim() || nome;
+}
+
 function formatAudienciaAlert(card: any, date: Date, clientName: string, alertNumber: number): string {
   const dateStr = date.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const processInfo = extractProcessFromCard(card);
+  const label = processLabel(card);
 
   if (alertNumber === 2) {
-    return `Olá, tudo bem? Aqui é a Iara Secretária do Dr. Wesley. Estou passando para lembrar que na próxima semana tem uma audiência no fórum relacionada ao seu processo${processInfo ? ` (${processInfo})` : ''}, marcada para ${dateStr}. Vou verificar com o Doutor se é obrigatória sua participação e te informo. Qualquer dúvida, estou à disposição!`;
+    return `Olá, tudo bem? Aqui é a Iara Secretária do Dr. Wesley. Estou passando para lembrar que na próxima semana tem uma audiência no fórum relacionada ao processo ${label}, marcada para ${dateStr}. Vou verificar com o Doutor se é obrigatória sua participação e te informo. Qualquer dúvida, estou à disposição!`;
   }
 
-  return `Olá, tudo bem? Aqui é a Iara Secretária do Dr. Wesley. Passando para lembrar que AMANHÃ tem audiência no fórum relacionada ao seu processo${processInfo ? ` (${processInfo})` : ''}. Data: ${dateStr}. Vou verificar com o Doutor se é obrigatória sua participação. Qualquer dúvida, estou à disposição!`;
+  return `Olá, tudo bem? Aqui é a Iara Secretária do Dr. Wesley. Passando para lembrar que AMANHÃ tem audiência no fórum relacionada ao processo ${label}. Data: ${dateStr}. Vou verificar com o Doutor se é obrigatória sua participação. Qualquer dúvida, estou à disposição!`;
 }
 
 function extractDateFromCard(card: any): Date | null {

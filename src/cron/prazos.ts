@@ -29,7 +29,9 @@ export async function cronPrazos(): Promise<void> {
 
       let phone = extrairTelefoneDeTexto(card.desc || '');
       let clientName = '';
-      const processInfo = extractProcessFromCard(card) || card.name;
+      // Usa o nome do card como label legível (partes + tipo de ação).
+      // Remove número de processo se vier embutido no nome — o cliente não sabe o número.
+      const processInfo = (card.name || '').replace(/\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\s*[-–]?\s*/g, '').trim() || card.name;
 
       if (phone) {
         const contact = await lookupSheets(phone);
