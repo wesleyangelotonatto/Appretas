@@ -551,9 +551,9 @@ async function executeCommand(parsed: any, io: any): Promise<any> {
 
   switch (action) {
     case 'send_message':
-      await sendMessage(params.phone, params.message, { assinar: false });
-      saveMessage(params.phone, 'wesley', params.message);
-      io?.emit('message', { phone: params.phone, role: 'wesley', body: params.message, timestamp: Date.now() });
+      await sendMessage(params.phone, params.message);
+      saveMessage(params.phone, 'iara', params.message);
+      io?.emit('message', { phone: params.phone, role: 'iara', body: params.message, timestamp: Date.now() });
       return { sent: true };
 
     case 'update_trello': {
