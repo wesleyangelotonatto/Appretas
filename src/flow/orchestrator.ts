@@ -301,6 +301,8 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
           marcarAusenciaPendente(phone);
         }
       }
+      // Fora do horário: não gera resposta de IA além do aviso de ausência
+      return;
     }
 
     // 8. Detecta urgência
@@ -420,13 +422,18 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     if (isFirstMessageToday) {
       // Mesmo no primeiro contato do dia, não repete a apresentação se ela já
       // saiu para este contato nas últimas 24h (ex.: conversa que virou a noite)
-      if (!jaEnviouTipo(phone, 'saudacao', 24)) {
+      // E também não repete se Wesley está/estava atendendo esta pessoa diretamente:
+      // a saudação interromperia uma conversa ativa sem sentido.
+      const wesleyAtendeuEsseContato = houveRespostaDeWesley(4320, phone); // últimas 3 dias (4320 min)
+      if (!jaEnviouTipo(phone, 'saudacao', 24) && !wesleyAtendeuEsseContato) {
         // Se é o primeiro contato absoluto E o cliente já explicou o assunto,
         // não pergunta "como posso ajudar" — reconhece e diz que vai repassar.
         const jaExplicouAssunto = !session && primeiraMessagemComAssunto(textBody);
         const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(generoFinal) : SAUDACAO(generoFinal);
         await deliverOrQueue(phone, saudacao, 'saudação inicial', io, displayName);
         registrarTipoEnviado(phone, 'saudacao');
+      } else if (wesleyAtendeuEsseContato) {
+        console.log(`[orchestrator] saudação suprimida — Wesley atendeu ${phone} nas últimas 72h`);
       }
       if (!session) return; // primeiro contato absoluto: aguarda resposta antes de continuar
     }
