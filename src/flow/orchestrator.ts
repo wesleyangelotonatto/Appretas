@@ -279,6 +279,17 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // 5a. Detecta gênero — prioridade: salvo no banco → texto → nome → IA → neutro
     const genero: Genero = await detectarGeneroComIA(phone, textBody, session?.name, session?.genero);
 
+    // 5b-saudação. Saudação inaugural: APENAS para contatos que NUNCA falaram com o escritório.
+    // Fica aqui (e não em handleIncomingMessage) para que a janela de agrupamento de 30 min
+    // seja respeitada — o cliente pode estar digitando várias mensagens seguidas antes de parar.
+    if (!session) {
+      const jaExplicouAssunto = primeiraMessagemComAssunto(textBody);
+      const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(genero) : SAUDACAO(genero);
+      await deliverOrQueue(phone, saudacao, 'saudação inicial', io, waName);
+      registrarTipoEnviado(phone, 'saudacao');
+      return;
+    }
+
     // 6. Modo ausência (Wesley em férias / feriado)
     const ausenciaMsg = getSetting('ausencia_msg');
     if (ausenciaMsg) {
@@ -422,20 +433,6 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
 
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
     const generoFinal: Genero = await detectarGeneroComIA(phone, textBody, displayName, session?.genero);
-
-    // Saudação inaugural: APENAS para contatos que nunca falaram com o escritório.
-    // MSG_INICIAL é uma apresentação ("Aqui é a Iara, secretária do Dr. Wesley..."),
-    // não um cumprimento diário. Enviá-la toda manhã para quem já é cliente faz
-    // parecer que o escritório não o reconhece — é o erro que vinha ocorrendo.
-    if (!session) {
-      // Primeiro contato absoluto: se já explicou o assunto, reconhece e diz que vai repassar.
-      // Caso contrário, pergunta como pode ajudar.
-      const jaExplicouAssunto = primeiraMessagemComAssunto(textBody);
-      const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(generoFinal) : SAUDACAO(generoFinal);
-      await deliverOrQueue(phone, saudacao, 'saudação inicial', io, displayName);
-      registrarTipoEnviado(phone, 'saudacao');
-      return; // aguarda resposta antes de continuar
-    }
 
     let draft = '';
     let context = '';
