@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { io as getIo } from '../server';
-import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley } from '../memory/db';
+import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley, wesleyFoiOUltimoAResponder } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -194,14 +194,12 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       return;
     }
 
-    // 5b. Wesley já está conversando com este cliente: vale como assumir a conversa,
-    // mesmo sem clicar em "Assumir" no painel. Sem isso, a cada mensagem do cliente a
-    // Iara gerava rascunho e enfileirava sugestão enquanto ele mesmo respondia —
-    // poluindo o painel com propostas que ele nunca vai usar (e gastando chamada de IA).
-    // A mensagem do cliente continua sendo salva e exibida normalmente, acima.
-    // Passados MINUTOS_ATIVIDADE_WESLEY sem fala dele, a Iara volta a sugerir.
-    if (!calibrando && houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
-      console.log(`[orchestrator] Wesley está atendendo ${phone} — nenhum rascunho gerado`);
+    // 5b. Wesley está/esteve nessa conversa: se a última resposta do escritório foi
+    // dele (não da Iara), a conversa é dele — a Iara não entra independente do tempo.
+    // Também bloqueia se ele respondeu qualquer conversa há menos de MINUTOS_ATIVIDADE_WESLEY,
+    // pois indica que ele está em plantão ativo de atendimento.
+    if (!calibrando && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY))) {
+      console.log(`[orchestrator] Wesley atendendo ${phone} — nenhum rascunho gerado`);
       io?.emit('session_update', { phone, status: 'atendimento_wesley' });
       return;
     }
@@ -255,12 +253,12 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     const session = getSession(phone);
     const calibrando = modoCalibragem();
 
-    // Wesley já respondeu esta conversa enquanto a janela de agrupamento estava
-    // aguardando? Se sim, ele assumiu o atendimento — a Iara não deve intervir.
-    // Isso cobre o caso mais comum: Wesley responde no celular entre o momento
-    // em que a janela abre e o momento em que ela vence (10 min depois).
-    if (!calibrando && houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
-      console.log(`[orchestrator] janela expirou mas Wesley respondeu ${phone} — nenhuma ação`);
+    // Verifica se Wesley é o dono desta conversa antes de qualquer ação:
+    // - Se sua última mensagem nessa conversa é mais recente que a da Iara → conversa é dele
+    // - Se ele respondeu qualquer pessoa há menos de MINUTOS_ATIVIDADE_WESLEY → está em plantão
+    // Sem esse check aqui, a janela de agrupamento poderia disparar mesmo após Wesley responder.
+    if (!calibrando && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY))) {
+      console.log(`[orchestrator] janela expirou mas Wesley é o dono de ${phone} — nenhuma ação`);
       return;
     }
 
