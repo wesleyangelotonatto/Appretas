@@ -282,13 +282,23 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
       return;
     }
 
+    // Encerramento antes de qualquer resposta — vale para novos e existentes:
+    // "Ok, obrigada", "Tudo bem", "Até mais" etc. não pedem resposta
+    if (!calibrando && isEncerramento(textBody)) {
+      console.log(`[orchestrator] encerramento detectado antes da saudação — sem resposta para ${phone}: "${textBody}"`);
+      return;
+    }
+
     // 5a. Detecta gênero — prioridade: salvo no banco → texto → nome → IA → neutro
     const genero: Genero = await detectarGeneroComIA(phone, textBody, session?.name, session?.genero);
 
     // 5b-saudação. Saudação inaugural: APENAS para contatos que NUNCA falaram com o escritório.
     // Fica aqui (e não em handleIncomingMessage) para que a janela de agrupamento de 30 min
     // seja respeitada — o cliente pode estar digitando várias mensagens seguidas antes de parar.
+    // upsertSession é chamado AQUI para que na próxima mensagem session já exista e
+    // a saudação não seja enviada de novo.
     if (!session) {
+      upsertSession(phone, { name: waName || phone, status: 'ativo' });
       const jaExplicouAssunto = primeiraMessagemComAssunto(textBody);
       const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(genero) : SAUDACAO(genero);
       await deliverOrQueue(phone, saudacao, 'saudação inicial', io, waName);
