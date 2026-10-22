@@ -578,6 +578,11 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
 
     if (draft) {
       draft = aplicarGlossario(draft);
+      // Re-checa Wesley logo antes de enviar: ele pode ter respondido enquanto a IA processava
+      if (!modoCalibragem() && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY))) {
+        console.log(`[orchestrator] rascunho pronto mas Wesley respondeu durante o processamento — descartando para ${phone}`);
+        return;
+      }
       await deliverOrQueue(phone, draft, context, io, contact?.name || session?.name);
     }
 
