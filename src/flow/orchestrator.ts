@@ -255,6 +255,15 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     const session = getSession(phone);
     const calibrando = modoCalibragem();
 
+    // Wesley já respondeu esta conversa enquanto a janela de agrupamento estava
+    // aguardando? Se sim, ele assumiu o atendimento — a Iara não deve intervir.
+    // Isso cobre o caso mais comum: Wesley responde no celular entre o momento
+    // em que a janela abre e o momento em que ela vence (10 min depois).
+    if (!calibrando && houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
+      console.log(`[orchestrator] janela expirou mas Wesley respondeu ${phone} — nenhuma ação`);
+      return;
+    }
+
     // Silêncio é resposta válida: quando o cliente está apenas relatando,
     // mandando documentos ou confirmando algo, responder só gera ruído.
     // Em calibragem o filtro é desativado: o objetivo é ver o rascunho de
