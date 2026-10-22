@@ -356,11 +356,15 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // 12b. E-mail e PIX: resposta fixa (não gerada por IA) para nunca inventar/errar o dado.
     // Apenas dispara quando a mensagem pede explicitamente o dado — mencionar a palavra "email"
     // num contexto jurídico/narrativo (ex: "foi direcionado para o email dele") não deve acionar.
+    // Só dispara quando o cliente está claramente pedindo o dado do escritório.
+    // Menções contextuais ("paguei via pix", "enviei e-mail para ele", "o processo
+    // foi por e-mail") NÃO devem acionar — o verbo/pronome precisa indicar pedido
+    // direto ao escritório ("qual o seu pix", "me passa o email de vocês", etc.)
     const pedidoPix = /\bpix\b/i.test(textBody) &&
-      /(?:qual|me\s+pass[ae]|mand[ae]|send[ae]|informa|dado[s]?|chave|pagar|pagamento|transferi)/i.test(textBody);
+      /(?:qual\s+[eéè\s]*(o\s+)?(?:seu|o\s+)?pix|me\s+pass[ae].*\bpix\b|\bpix\b.*me\s+pass[ae]|chave\s+pix|pix\s+d[oa]\s+(?:senhor|dr|doutor|escritório)|como\s+(?:faço\s+)?(?:o\s+)?pagamento|para\s+(?:fazer|realizar|efetuar)\s+(?:o\s+)?pagamento)/i.test(textBody);
     const pedidoEmail = !pedidoPix &&
       /e-?mail/i.test(textBody) &&
-      /(?:qual|me\s+pass[ae]|mand[ae]|send[ae]|informa|qual\s+[eéè]|pode\s+pass[ae]|pode\s+me\s+(?:dar|pass[ae]|mand[ae])|endere[cç]o\s+de\s+e-?mail|contato)/i.test(textBody);
+      /(?:qual\s+[eéè\s]*(o\s+)?(?:seu|o\s+)?e-?mail|me\s+pass[ae].*e-?mail|e-?mail.*me\s+pass[ae]|endere[cç]o\s+de\s+e-?mail|e-?mail\s+d[oa]\s+(?:senhor|dr|doutor|escritório)|qual\s+o\s+contato\s+(?:de\s+)?e-?mail|pode\s+me\s+(?:dar|pass[ae]|mand[ae]).*e-?mail|e-?mail.*(?:de\s+)?contato)/i.test(textBody);
     if (pedidoPix || pedidoEmail) {
       await deliverOrQueue(phone, pedidoPix ? MSG_PIX : MSG_EMAIL, pedidoPix ? 'pedido_pix' : 'pedido_email', io, contact?.name);
       return;

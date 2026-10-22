@@ -175,7 +175,7 @@ export function SAUDACAO(g: Genero = 'N'): string {
 
 // Sem a apresentação no corpo: toda mensagem já sai assinada com "Iara - Secretária"
 // em negrito e itálico na linha de cima (ver ASSINATURA_IARA em responder/send.ts)
-export const MSG_FORA_HORARIO = `Oi! O doutor Wesley está em viagem e retorna no dia 13/10. Durante a ausência, estou aqui para receber sua mensagem e repassar ao doutor assim que possível. Em casos urgentes e graves (prisão, acidente ou busca e apreensão, etc), ligue várias vezes no telefone do Dr. Wesley diretamente. Ou, pode deixar o recado aqui que eu repasso pra ele.`;
+export const MSG_FORA_HORARIO = `Oi! No momento estamos fora do horário de atendimento (seg-sex, 08h30 às 17h). Sua mensagem foi recebida e será respondida assim que possível. Em casos urgentes e graves (prisão, acidente ou busca e apreensão), ligue diretamente para o Dr. Wesley. Obrigada!`;
 
 // Janela em que o aviso de ausência pode ser enviado (todos os dias). Fora dela, nada é
 // enviado automaticamente — fica pendente e só é entregue quando a janela reabrir.
