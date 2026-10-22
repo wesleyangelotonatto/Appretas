@@ -50,7 +50,15 @@ const ENCERRAMENTOS_RE = [
   /^boa\s*(noite|tarde|semana)[\s!.]*$/i,
   /^bom\s*(dia|fim\s*de\s*semana)[\s!.]*$/i,
   /^flw[\s!.]*$/i,
+  /^blz[\s!.]*$/i,
+  /^beleza[\s!.]*$/i,
+  /^show[\s!.]*$/i,
+  /^ótimo[\s!.]*$/i,
+  /^maravilha[\s!.]*$/i,
+  /^excelente[\s!.]*$/i,
+  /^(tá\s+)?bom[\s!.]*$/i,
   /^👍[\s!.]*$/,
+  /^✅[\s!.]*$/,
 ];
 
 const CASE_TITLE_KEYWORDS = /processo|requerimento|apresentação|espólio|execução|embargos|ação\b|mandado|recurso|apelação|inventário|cumprimento de sentença|habilitação/i;

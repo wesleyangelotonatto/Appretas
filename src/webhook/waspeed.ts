@@ -166,7 +166,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     // como resposta do staff (para o cron de "não respondidos" saber que já foi respondido)
     // e detecta agendamentos, mas não processa pelo pipeline de IA
     if (fromMe) {
-      const { getSession, saveMessage } = await import('../memory/db');
+      const { getSession, saveMessage, upsertSession } = await import('../memory/db');
       const { isEcoDeEnvioProprio } = await import('../responder/send');
       const session = getSession(phone);
       // O WhatsApp devolve como "fromMe" também as mensagens que a própria Iara
@@ -175,6 +175,10 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       if (body?.trim() && !isEcoDeEnvioProprio(phone, body)) {
         saveMessage(phone, 'wesley', body);
         req.app.locals.io?.emit('message', { phone, role: 'wesley', body, timestamp: Date.now() });
+        // Garante que a sessão existe para clientes que Wesley atende manualmente.
+        // Sem isso, quando a Iara eventualmente age nessa conversa, session = null
+        // e ela envia a saudação inaugural como se fosse um contato novo.
+        if (!session) upsertSession(phone, { name: waName || phone, status: 'ativo' });
       }
       detectAppointment(phone, body, session?.name, req.app.locals.io).catch(() => {});
       return;
