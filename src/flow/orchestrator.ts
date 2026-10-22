@@ -175,6 +175,12 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
       }
     }
 
+    // Calcula o tempo de espera ANTES de salvar a mensagem, pois houveTrocaHoje
+    // consultaria a própria mensagem que acabou de chegar e sempre retornaria true.
+    // Usa a sessão como proxy: sem sessão = primeiro contato absoluto (30 min);
+    // com sessão = cliente conhecido, pode ter conversa ativa (60 min).
+    const minutosEsperaJanela = session ? JANELA_MIN_EM_ANDAMENTO : JANELA_MIN_PRIMEIRO_HOJE;
+
     // 5. SEMPRE salva a mensagem do cliente e emite para o painel
     saveMessage(phone, 'client', textBody, mediaUrl);
     io?.emit('message', { phone, role: 'client', body: textBody, mediaUrl, timestamp: Date.now() });
@@ -208,7 +214,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // seguidos. Responder cada uma vira uma enxurrada de mensagens iguais e um
     // atendimento robotico. Aqui a mensagem so e registrada; a resposta sai uma
     // vez so, depois de alguns minutos de silencio dele, lendo o bloco inteiro.
-    agendarResposta(phone, textBody, io, waName);
+    agendarResposta(phone, textBody, io, waName, minutosEsperaJanela);
 
   } catch (err) {
     console.error('[orchestrator] erro ao processar mensagem:', err);
@@ -222,10 +228,10 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 const JANELA_MIN_PRIMEIRO_HOJE = parseInt(process.env.MINUTOS_AGRUPAMENTO_NOVO || '') || 30;
 const JANELA_MIN_EM_ANDAMENTO  = parseInt(process.env.MINUTOS_AGRUPAMENTO_ATIVO || '') || 60;
 
-function agendarResposta(phone: string, texto: string, _io: any, waName?: string) {
-  const minutosEspera = houveTrocaHoje(phone) ? JANELA_MIN_EM_ANDAMENTO : JANELA_MIN_PRIMEIRO_HOJE;
-  acumularNaJanela(phone, texto, waName, minutosEspera);
-  console.log(`[orchestrator] mensagem de ${phone} guardada; resposta apos ${minutosEspera} min de silencio`);
+function agendarResposta(phone: string, texto: string, _io: any, waName?: string, minutosEspera?: number) {
+  const mins = minutosEspera ?? JANELA_MIN_PRIMEIRO_HOJE;
+  acumularNaJanela(phone, texto, waName, mins);
+  console.log(`[orchestrator] mensagem de ${phone} guardada; resposta apos ${mins} min de silencio`);
 }
 
 // Verificacao periodica: responde as conversas em que o cliente ja parou de
@@ -682,11 +688,17 @@ const MINUTOS_ATIVIDADE_WESLEY = parseInt(process.env.MINUTOS_ATIVIDADE_WESLEY |
 // Critério: texto com mais de 60 chars após remover saudações comuns, ou que
 // contém pergunta clara ("poderia", "gostaria", "preciso", "quero saber" etc.)
 function primeiraMessagemComAssunto(texto: string): boolean {
+  // Remove saudação inicial de cada linha e analisa o bloco completo acumulado
   const limpo = texto
-    .replace(/^(?:bom\s*dia|boa\s*tarde|boa\s*noite|olá|oi|tudo\s*bem)[?!.,\s]*/i, '')
+    .split('\n')
+    .map(l => l.replace(/^(?:bom\s*dia|boa\s*tarde|boa\s*noite|olá|oi|tudo\s*bem|dr\.?)[?!.,\s]*/i, '').trim())
+    .filter(Boolean)
+    .join(' ')
     .trim();
-  if (limpo.length > 60) return true;
-  return /(?:poderia|gostaria|preciso|quero\s+saber|necessito|solicito|informar|protocolo|número|processo|advogado|contrato|audiência|prazo|recurso|notificação|indenização)/i.test(limpo);
+  // Texto longo após saudação = o cliente já explicou o caso
+  if (limpo.length > 40) return true;
+  // Palavras-chave que indicam assunto jurídico/pedido mesmo em texto curto
+  return /(?:poderia|gostaria|preciso|quero\s+saber|necessito|solicito|novidade|notícia|andamento|liberação|bloqueado|pagamento|indenização|processo|contrato|audiência|prazo|recurso|notificação|advogado)/i.test(limpo);
 }
 
 // está ali respondendo. Vale tanto para a própria conversa quanto para o plantão
