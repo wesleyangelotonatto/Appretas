@@ -657,10 +657,13 @@ export function houveRespostaDeWesley(minutos: number, phone?: string): boolean 
 // foi do Wesley (e não da Iara). Sem limite de tempo — se Wesley foi o último
 // a falar, a conversa é dele independente de quando foi.
 export function wesleyFoiOUltimoAResponder(phone: string): boolean {
+  // Verifica a última mensagem de qualquer remetente para este contato.
+  // Se a última foi do cliente, Iara pode agir (Wesley já foi respondido e o cliente
+  // está aguardando). Só fica quieta se Wesley ou Iara falou por último.
   const row = getDb().prepare(
-    `SELECT role FROM messages WHERE phone = ? AND role IN ('wesley','iara') ORDER BY created_at DESC LIMIT 1`
+    `SELECT role FROM messages WHERE phone = ? ORDER BY created_at DESC LIMIT 1`
   ).get(phone) as { role: string } | undefined;
-  return row?.role === 'wesley';
+  return row?.role === 'wesley' || row?.role === 'iara';
 }
 
 // Reivindica o aviso de ausência do dia de forma ATÔMICA: retorna true só para a
