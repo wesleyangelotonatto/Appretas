@@ -424,7 +424,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
       // saiu para este contato nas últimas 24h (ex.: conversa que virou a noite)
       // E também não repete se Wesley está/estava atendendo esta pessoa diretamente:
       // a saudação interromperia uma conversa ativa sem sentido.
-      const wesleyAtendeuEsseContato = houveRespostaDeWesley(4320, phone); // últimas 3 dias (4320 min)
+      const wesleyAtendeuEsseContato = houveRespostaDeWesley(720, phone); // últimas 12h (720 min)
       if (!jaEnviouTipo(phone, 'saudacao', 24) && !wesleyAtendeuEsseContato) {
         // Se é o primeiro contato absoluto E o cliente já explicou o assunto,
         // não pergunta "como posso ajudar" — reconhece e diz que vai repassar.
@@ -433,7 +433,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
         await deliverOrQueue(phone, saudacao, 'saudação inicial', io, displayName);
         registrarTipoEnviado(phone, 'saudacao');
       } else if (wesleyAtendeuEsseContato) {
-        console.log(`[orchestrator] saudação suprimida — Wesley atendeu ${phone} nas últimas 72h`);
+        console.log(`[orchestrator] saudação suprimida — Wesley atendeu ${phone} nas últimas 12h`);
       }
       if (!session) return; // primeiro contato absoluto: aguarda resposta antes de continuar
     }
