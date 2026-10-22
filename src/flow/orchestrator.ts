@@ -210,9 +210,9 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
 
     // 5b. Wesley está/esteve nessa conversa: se a última resposta do escritório foi
     // dele (não da Iara), a conversa é dele — a Iara não entra independente do tempo.
-    // Também bloqueia se ele respondeu qualquer conversa há menos de MINUTOS_ATIVIDADE_WESLEY,
-    // pois indica que ele está em plantão ativo de atendimento.
-    if (!calibrando && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY))) {
+    // Só verifica por conversa (não global): Wesley respondendo outro contato não
+    // impede a Iara de atender clientes diferentes em paralelo.
+    if (!calibrando && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone))) {
       console.log(`[orchestrator] Wesley atendendo ${phone} — nenhum rascunho gerado`);
       io?.emit('session_update', { phone, status: 'atendimento_wesley' });
       return;
@@ -273,9 +273,9 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
 
     // Verifica se Wesley é o dono desta conversa antes de qualquer ação:
     // - Se sua última mensagem nessa conversa é mais recente que a da Iara → conversa é dele
-    // - Se ele respondeu qualquer pessoa há menos de MINUTOS_ATIVIDADE_WESLEY → está em plantão
-    // Sem esse check aqui, a janela de agrupamento poderia disparar mesmo após Wesley responder.
-    if (!calibrando && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY))) {
+    // - Se ele respondeu este contato há menos de MINUTOS_ATIVIDADE_WESLEY → está atendendo ele
+    // Check por conversa (não global): Wesley em outra conversa não bloqueia outros atendimentos.
+    if (!calibrando && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone))) {
       console.log(`[orchestrator] janela expirou mas Wesley é o dono de ${phone} — nenhuma ação`);
       return;
     }
@@ -579,7 +579,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     if (draft) {
       draft = aplicarGlossario(draft);
       // Re-checa Wesley logo antes de enviar: ele pode ter respondido enquanto a IA processava
-      if (!modoCalibragem() && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY))) {
+      if (!modoCalibragem() && (wesleyFoiOUltimoAResponder(phone) || houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone))) {
         console.log(`[orchestrator] rascunho pronto mas Wesley respondeu durante o processamento — descartando para ${phone}`);
         return;
       }
@@ -633,6 +633,20 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 async function precisaDeResposta(phone: string, texto: string): Promise<boolean> {
   const t = (texto || '').trim();
   if (!t) return false;
+
+  // Encerramentos claros — sem IA
+  if (isEncerramento(t)) return false;
+
+  // Pergunta explícita — sem IA
+  if (t.includes('?')) return true;
+
+  // Assunto jurídico ou pedido direto — sem IA
+  if (/(?:processo|prazo|audiência|audiencia|recurso|contrato|pagamento|honorário|honorario|andamento|novidade|notícia|noticia|liberação|liberacao|bloqueado|poderia|gostaria|preciso|quero\s+saber|necessito|solicito|urgente|advogado)/i.test(t)) return true;
+
+  // Texto muito curto sem pergunta — provavelmente confirmação ou relato breve
+  if (t.length < 20) return false;
+
+  // Ambíguo — chama IA apenas para casos que não se encaixam nas regras acima
   try {
     const historico = getHistory(phone, 8)
       .map((m: any) => `${m.role === 'client' ? 'Cliente' : m.role === 'wesley' ? 'Dr. Wesley' : 'Iara'}: ${(m.body || '').slice(0, 300)}`)
@@ -730,10 +744,6 @@ function wesleyAtendendoAgora(phone: string): boolean {
   try {
     if (houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY, phone)) {
       console.log(`[ausencia] suprimido — Wesley já respondeu esta conversa há menos de ${MINUTOS_ATIVIDADE_WESLEY} min: ${phone}`);
-      return true;
-    }
-    if (houveRespostaDeWesley(MINUTOS_ATIVIDADE_WESLEY)) {
-      console.log(`[ausencia] suprimido — Wesley está atendendo agora (respondeu alguém há menos de ${MINUTOS_ATIVIDADE_WESLEY} min): ${phone}`);
       return true;
     }
     return false;
