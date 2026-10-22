@@ -421,30 +421,18 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // Refina gênero com o nome obtido no lookup (mais preciso que só a sessão)
     const generoFinal: Genero = await detectarGeneroComIA(phone, textBody, displayName, session?.genero);
 
-    // Saudação uma vez por dia (primeiro contato do dia). session.updated_at é um epoch
-    // REAL (unixepoch() do SQLite), então o corte de "hoje" precisa ser um epoch real
-    // também — não dá para comparar com um Date "fingindo" ser local em outro fuso
-    // (Railway roda em UTC; Brasil é UTC-3 fixo, sem horário de verão desde 2019)
-    const spNow = new Date(new Date().toLocaleString('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' }));
-    const hoje = Math.floor(Date.UTC(spNow.getFullYear(), spNow.getMonth(), spNow.getDate(), 3, 0, 0) / 1000);
-    const isFirstMessageToday = !session || !session.updated_at || session.updated_at < hoje;
-    if (isFirstMessageToday) {
-      // Mesmo no primeiro contato do dia, não repete a apresentação se ela já
-      // saiu para este contato nas últimas 24h (ex.: conversa que virou a noite)
-      // E também não repete se Wesley está/estava atendendo esta pessoa diretamente:
-      // a saudação interromperia uma conversa ativa sem sentido.
-      const wesleyAtendeuEsseContato = houveRespostaDeWesley(720, phone); // últimas 12h (720 min)
-      if (!jaEnviouTipo(phone, 'saudacao', 24) && !wesleyAtendeuEsseContato) {
-        // Se é o primeiro contato absoluto E o cliente já explicou o assunto,
-        // não pergunta "como posso ajudar" — reconhece e diz que vai repassar.
-        const jaExplicouAssunto = !session && primeiraMessagemComAssunto(textBody);
-        const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(generoFinal) : SAUDACAO(generoFinal);
-        await deliverOrQueue(phone, saudacao, 'saudação inicial', io, displayName);
-        registrarTipoEnviado(phone, 'saudacao');
-      } else if (wesleyAtendeuEsseContato) {
-        console.log(`[orchestrator] saudação suprimida — Wesley atendeu ${phone} nas últimas 12h`);
-      }
-      if (!session) return; // primeiro contato absoluto: aguarda resposta antes de continuar
+    // Saudação inaugural: APENAS para contatos que nunca falaram com o escritório.
+    // MSG_INICIAL é uma apresentação ("Aqui é a Iara, secretária do Dr. Wesley..."),
+    // não um cumprimento diário. Enviá-la toda manhã para quem já é cliente faz
+    // parecer que o escritório não o reconhece — é o erro que vinha ocorrendo.
+    if (!session) {
+      // Primeiro contato absoluto: se já explicou o assunto, reconhece e diz que vai repassar.
+      // Caso contrário, pergunta como pode ajudar.
+      const jaExplicouAssunto = primeiraMessagemComAssunto(textBody);
+      const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(generoFinal) : SAUDACAO(generoFinal);
+      await deliverOrQueue(phone, saudacao, 'saudação inicial', io, displayName);
+      registrarTipoEnviado(phone, 'saudacao');
+      return; // aguarda resposta antes de continuar
     }
 
     let draft = '';
