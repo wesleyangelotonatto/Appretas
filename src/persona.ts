@@ -169,6 +169,12 @@ export function MSG_INICIAL(g: Genero = 'N'): string {
   return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia. Consegue escrever aqui como posso ${ajudarSufixo(g)}?`;
 }
 
+// Usada quando o cliente já explicou o assunto no primeiro contato — não faz sentido
+// perguntar "como posso ajudar" se ele já disse o que precisa.
+export function MSG_INICIAL_COM_ASSUNTO(_g: Genero = 'N'): string {
+  return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia. Irei repassar a situação ao Dr. Wesley e logo ele lhe dará um retorno.`;
+}
+
 export function SAUDACAO(g: Genero = 'N'): string {
   return MSG_INICIAL(g);
 }
@@ -249,6 +255,9 @@ const TEXTOS_FIXOS = new Set<string>([
   MSG_AMIGO,
   MSG_EMAIL,
   MSG_PIX,
+  MSG_INICIAL_COM_ASSUNTO(),
+  MSG_INICIAL_COM_ASSUNTO('M'),
+  MSG_INICIAL_COM_ASSUNTO('F'),
 ]);
 // MSG_INICIAL existe em 3 variações de gênero — verificação por prefixo abaixo
 const MSG_INICIAL_PREFIXO = 'Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga.';

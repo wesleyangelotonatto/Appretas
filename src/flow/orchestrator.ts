@@ -11,7 +11,7 @@ import { consultarDjen } from '../integrations/djen';
 import { buscarCardTrello, buscarCardPorNomes, criarCardLead } from '../integrations/trello';
 import { saveDocument } from '../integrations/drive';
 import {
-  aplicarGlossario, SAUDACAO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
+  aplicarGlossario, SAUDACAO, MSG_INICIAL_COM_ASSUNTO, MSG_FORA_HORARIO, MSG_URGENCIA_AGUARDAR,
   MSG_PEDIR_ADVOGADO, MSG_RECUSA_SECRETARIA, MSG_AMIGO, JANELA_AUSENCIA, HORARIO_ATENDIMENTO,
   MSG_EMAIL, MSG_PIX,
   MSG_PEDIR_DADOS_PROCESSO, detectarGenero, detectarGeneroComIA, type Genero,
@@ -421,7 +421,11 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
       // Mesmo no primeiro contato do dia, não repete a apresentação se ela já
       // saiu para este contato nas últimas 24h (ex.: conversa que virou a noite)
       if (!jaEnviouTipo(phone, 'saudacao', 24)) {
-        await deliverOrQueue(phone, SAUDACAO(generoFinal), 'saudação inicial', io, displayName);
+        // Se é o primeiro contato absoluto E o cliente já explicou o assunto,
+        // não pergunta "como posso ajudar" — reconhece e diz que vai repassar.
+        const jaExplicouAssunto = !session && primeiraMessagemComAssunto(textBody);
+        const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(generoFinal) : SAUDACAO(generoFinal);
+        await deliverOrQueue(phone, saudacao, 'saudação inicial', io, displayName);
         registrarTipoEnviado(phone, 'saudacao');
       }
       if (!session) return; // primeiro contato absoluto: aguarda resposta antes de continuar
@@ -670,6 +674,18 @@ const MINUTOS_ATIVIDADE_WESLEY = parseInt(process.env.MINUTOS_ATIVIDADE_WESLEY |
 
 // Interrompe o aviso de ausência quando Wesley está atendendo fora do horário:
 // não faz sentido avisar que ele só responde em horário comercial enquanto ele
+// Retorna true quando a primeira mensagem de um novo contato já traz contexto
+// suficiente (assunto, pedido, situação) e não precisa ser questionado.
+// Critério: texto com mais de 60 chars após remover saudações comuns, ou que
+// contém pergunta clara ("poderia", "gostaria", "preciso", "quero saber" etc.)
+function primeiraMessagemComAssunto(texto: string): boolean {
+  const limpo = texto
+    .replace(/^(?:bom\s*dia|boa\s*tarde|boa\s*noite|olá|oi|tudo\s*bem)[?!.,\s]*/i, '')
+    .trim();
+  if (limpo.length > 60) return true;
+  return /(?:poderia|gostaria|preciso|quero\s+saber|necessito|solicito|informar|protocolo|número|processo|advogado|contrato|audiência|prazo|recurso|notificação|indenização)/i.test(limpo);
+}
+
 // está ali respondendo. Vale tanto para a própria conversa quanto para o plantão
 // em geral — ao assumir a fila, ele atende vários contatos seguidos.
 function wesleyAtendendoAgora(phone: string): boolean {
