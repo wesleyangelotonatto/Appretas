@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { io as getIo } from '../server';
-import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley, wesleyFoiOUltimoAResponder } from '../memory/db';
+import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley, wesleyFoiOUltimoAResponder, houveTrocaHoje } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -216,12 +216,16 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
   }
 }
 
-// Minutos de silencio do cliente antes de responder. Ajustavel por ambiente.
-const JANELA_AGRUPAMENTO_MIN = parseInt(process.env.MINUTOS_AGRUPAMENTO || '') || 10;
+// Minutos de silêncio conforme contexto da conversa:
+// - Primeiro contato do dia (sem troca prévia hoje): 30 min — mais calmo, cliente pode ainda estar digitando
+// - Conversa em andamento hoje: 60 min — Wesley pode já ter respondido, Iara espera mais antes de intervir
+const JANELA_MIN_PRIMEIRO_HOJE = parseInt(process.env.MINUTOS_AGRUPAMENTO_NOVO || '') || 30;
+const JANELA_MIN_EM_ANDAMENTO  = parseInt(process.env.MINUTOS_AGRUPAMENTO_ATIVO || '') || 60;
 
 function agendarResposta(phone: string, texto: string, _io: any, waName?: string) {
-  acumularNaJanela(phone, texto, waName);
-  console.log(`[orchestrator] mensagem de ${phone} guardada; resposta apos ${JANELA_AGRUPAMENTO_MIN} min de silencio`);
+  const minutosEspera = houveTrocaHoje(phone) ? JANELA_MIN_EM_ANDAMENTO : JANELA_MIN_PRIMEIRO_HOJE;
+  acumularNaJanela(phone, texto, waName, minutosEspera);
+  console.log(`[orchestrator] mensagem de ${phone} guardada; resposta apos ${minutosEspera} min de silencio`);
 }
 
 // Verificacao periodica: responde as conversas em que o cliente ja parou de
@@ -230,7 +234,7 @@ function agendarResposta(phone: string, texto: string, _io: any, waName?: string
 export async function processarJanelasVencidas(): Promise<void> {
   let vencidas;
   try {
-    vencidas = janelasVencidas(JANELA_AGRUPAMENTO_MIN);
+    vencidas = janelasVencidas();
   } catch (err) {
     console.error('[orchestrator] erro ao ler janelas vencidas:', err);
     return;

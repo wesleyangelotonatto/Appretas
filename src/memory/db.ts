@@ -233,6 +233,8 @@ export async function initDb(): Promise<void> {
   garantirColuna('contatos_processo', 'posicao', 'TEXT');
   // Gênero aprendido e persistido por contato (M/F/N) — evita rederivação errada a cada msg
   garantirColuna('sessions', 'genero', "TEXT DEFAULT 'N'");
+  // Tempo de espera personalizado por janela: 30 min (primeiro contato do dia) ou 60 min (conversa em andamento)
+  garantirColuna('janelas_resposta', 'minutos_espera', 'INTEGER DEFAULT 30');
 
   limparNomesContaminados();
   console.log('[db] banco inicializado:', DB_PATH);
@@ -505,24 +507,39 @@ export function listarContatosProcesso(): any[] {
 // ─── Janela de agrupamento, em banco para sobreviver a reinícios ──────────────
 
 // Guarda a mensagem e reinicia a contagem: enquanto o cliente fala, não responde
-export function acumularNaJanela(phone: string, texto: string, waName?: string) {
+export function acumularNaJanela(phone: string, texto: string, waName?: string, minutosEspera?: number) {
   const t = String(texto || '').trim();
+  const mins = minutosEspera ?? 30;
+  // minutos_espera é definido pela PRIMEIRA mensagem da janela e não muda enquanto ela está aberta.
+  // Novas mensagens do mesmo cliente apenas acumulam texto e atualizam ultima_at.
   getDb().prepare(`
-    INSERT INTO janelas_resposta (phone, textos, wa_name, ultima_at)
-    VALUES (?, ?, ?, unixepoch())
+    INSERT INTO janelas_resposta (phone, textos, wa_name, ultima_at, minutos_espera)
+    VALUES (?, ?, ?, unixepoch(), ?)
     ON CONFLICT(phone) DO UPDATE SET
       textos = CASE WHEN ? = '' THEN janelas_resposta.textos
                     ELSE TRIM(COALESCE(janelas_resposta.textos, '') || char(10) || ?) END,
       wa_name = COALESCE(NULLIF(excluded.wa_name, ''), janelas_resposta.wa_name),
       ultima_at = unixepoch()
-  `).run(phone, t, waName || '', t, t);
+  `).run(phone, t, waName || '', mins, t, t);
 }
 
-// Janelas em que o cliente já parou de falar há tempo suficiente
-export function janelasVencidas(minutos: number): Array<{ phone: string; textos: string; wa_name: string }> {
-  const limite = Math.floor(Date.now() / 1000) - minutos * 60;
-  return getDb().prepare('SELECT phone, textos, wa_name FROM janelas_resposta WHERE ultima_at <= ?')
-    .all(limite) as any[];
+// Janelas em que o cliente já parou de falar há tempo suficiente.
+// Cada linha tem seu próprio minutos_espera; o parâmetro legado é ignorado.
+export function janelasVencidas(_minutosLegado?: number): Array<{ phone: string; textos: string; wa_name: string }> {
+  const agora = Math.floor(Date.now() / 1000);
+  return getDb().prepare(
+    'SELECT phone, textos, wa_name FROM janelas_resposta WHERE (ultima_at + minutos_espera * 60) <= ?'
+  ).all(agora) as any[];
+}
+
+// Retorna true se houve pelo menos uma mensagem (qualquer role) para este contato hoje
+export function houveTrocaHoje(phone: string): boolean {
+  const inicioDia = new Date();
+  inicioDia.setHours(0, 0, 0, 0);
+  const row = getDb().prepare(
+    'SELECT 1 FROM messages WHERE phone = ? AND created_at >= ? LIMIT 1'
+  ).get(phone, Math.floor(inicioDia.getTime() / 1000));
+  return !!row;
 }
 
 export function removerJanela(phone: string) {
