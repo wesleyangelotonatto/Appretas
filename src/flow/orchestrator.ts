@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { io as getIo } from '../server';
-import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley, wesleyFoiOUltimoAResponder, houveTrocaHoje } from '../memory/db';
+import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley, wesleyFoiOUltimoAResponder, temHistoricoAnterior } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
@@ -332,7 +332,9 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // seja respeitada — o cliente pode estar digitando várias mensagens seguidas antes de parar.
     // upsertSession é chamado AQUI para que na próxima mensagem session já exista e
     // a saudação não seja enviada de novo.
-    if (!session) {
+    if (!session && temHistoricoAnterior(phone)) {
+      upsertSession(phone, { name: waName || phone, status: 'ativo' });
+    } else if (!session) {
       upsertSession(phone, { name: waName || phone, status: 'ativo' });
       // Tenta detectar o assunto: primeiro por regex (rápido), depois por IA se ambíguo.
       // Só pergunta ao cliente quando nenhuma das análises consegue identificar o tema.

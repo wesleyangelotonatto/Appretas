@@ -662,6 +662,17 @@ export function limparEventosAntigos() {
 // Sem telefone: qualquer contato (ele assumiu o atendimento). Com telefone:
 // apenas aquela conversa. Só conta fala digitada por ele — o eco das mensagens
 // da própria Iara é descartado na entrada do webhook.
+// Contato com qualquer passado no escritório: alguma fala da Iara/Wesley, ou fala
+// do próprio cliente com mais de 24h. Impede a saudação inaugural a quem já é conhecido
+// mesmo quando a sessão não existe (base antiga, sessão apagada, troca de número).
+export function temHistoricoAnterior(phone: string): boolean {
+  const limite = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+  const row = getDb().prepare(
+    `SELECT 1 FROM messages WHERE phone = ? AND (role IN ('iara','wesley') OR created_at < ?) LIMIT 1`
+  ).get(phone, limite);
+  return !!row;
+}
+
 export function houveRespostaDeWesley(minutos: number, phone?: string): boolean {
   const limite = Math.floor(Date.now() / 1000) - minutos * 60;
   const row = phone
