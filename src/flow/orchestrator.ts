@@ -245,23 +245,50 @@ function agendarResposta(phone: string, texto: string, _io: any, waName?: string
 // Verificacao periodica: responde as conversas em que o cliente ja parou de
 // falar. Fica em banco justamente para o reinicio do processo nao perder nada —
 // ao subir, a primeira passagem recolhe as janelas que venceram durante a queda.
+
+// Guarda para evitar que dois ciclos do setInterval se sobreponham: se o
+// processamento de um ciclo demorar mais de 60s (IA lenta, fila grande),
+// o próximo disparo do setInterval encontraria as mesmas janelas ainda abertas
+// e chamaria responderConversa duas vezes para o mesmo contato.
+let _processandoJanelas = false;
+
+// Controla telefones em processamento ativo para evitar duplicação
+// mesmo dentro de um único ciclo (ex: duas janelas do mesmo phone por bug).
+const _processandoPhones = new Set<string>();
+
 export async function processarJanelasVencidas(): Promise<void> {
-  let vencidas;
-  try {
-    vencidas = janelasVencidas();
-  } catch (err) {
-    console.error('[orchestrator] erro ao ler janelas vencidas:', err);
+  if (_processandoJanelas) {
+    console.log('[orchestrator] ciclo anterior ainda em execução — pulando');
     return;
   }
-  if (!vencidas.length) return;
+  _processandoJanelas = true;
 
-  for (const j of vencidas) {
-    // Remove ANTES de responder: se a redacao falhar, a janela nao fica presa
-    // repetindo a cada minuto
-    removerJanela(j.phone);
-    console.log(`[orchestrator] janela fechada para ${j.phone}`);
-    await responderConversa(j.phone, j.textos || '', getIo, j.wa_name || undefined)
-      .catch(err => console.error('[orchestrator] erro ao responder conversa agrupada:', err));
+  try {
+    let vencidas;
+    try {
+      vencidas = janelasVencidas();
+    } catch (err) {
+      console.error('[orchestrator] erro ao ler janelas vencidas:', err);
+      return;
+    }
+    if (!vencidas.length) return;
+
+    for (const j of vencidas) {
+      if (_processandoPhones.has(j.phone)) {
+        console.log(`[orchestrator] ${j.phone} já em processamento — ignorando duplicata`);
+        continue;
+      }
+      _processandoPhones.add(j.phone);
+      // Remove ANTES de responder: se a redacao falhar, a janela nao fica presa
+      // repetindo a cada minuto
+      removerJanela(j.phone);
+      console.log(`[orchestrator] janela fechada para ${j.phone}`);
+      await responderConversa(j.phone, j.textos || '', getIo, j.wa_name || undefined)
+        .catch(err => console.error('[orchestrator] erro ao responder conversa agrupada:', err))
+        .finally(() => _processandoPhones.delete(j.phone));
+    }
+  } finally {
+    _processandoJanelas = false;
   }
 }
 
