@@ -172,9 +172,12 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
       // O WhatsApp devolve como "fromMe" também as mensagens que a própria Iara
       // enviou. Gravá-las como fala do Wesley duplicaria o histórico e faria o
       // sistema acreditar que o cliente já foi atendido por uma pessoa.
-      if (body?.trim() && !isEcoDeEnvioProprio(phone, body)) {
-        saveMessage(phone, 'wesley', body);
-        req.app.locals.io?.emit('message', { phone, role: 'wesley', body, timestamp: Date.now() });
+      // Áudio, foto e documento do Wesley chegam sem texto, mas são resposta dele
+      // do mesmo jeito: sem registro a Iara acha que o cliente ficou sem atendimento.
+      const registro = body?.trim() || `[${messageType === 'ptt' || messageType === 'audio' ? 'áudio' : messageType} enviado pelo Dr. Wesley]`;
+      if (!isEcoDeEnvioProprio(phone, registro)) {
+        saveMessage(phone, 'wesley', registro);
+        req.app.locals.io?.emit('message', { phone, role: 'wesley', body: registro, timestamp: Date.now() });
         // Garante que a sessão existe para clientes que Wesley atende manualmente.
         // Sem isso, quando a Iara eventualmente age nessa conversa, session = null
         // e ela envia a saudação inaugural como se fosse um contato novo.

@@ -108,10 +108,12 @@ function extrairDadosProcesso(phone: string, mensagemAtual: string): { nome: str
   return { nome, contraParte, numero };
 }
 
+// Avalia a última linha do bloco: "...várias mensagens\nBeleza" encerra a conversa
 function isEncerramento(text: string): boolean {
-  const t = text.trim();
-  if (!t) return false;
-  return ENCERRAMENTOS_RE.some(re => re.test(t));
+  const linhas = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const ultima = linhas[linhas.length - 1];
+  if (!ultima) return false;
+  return ENCERRAMENTOS_RE.some(re => re.test(ultima));
 }
 
 // Palavras-chave de reclamação para gerar alerta prioritário
@@ -383,8 +385,8 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     }
 
     // 8. Detecta urgência
-    const urgencyKeywords = ['urgente', 'urgência', 'preso', 'presa', 'mandado', 'busca e apreensão', 'acidente', 'socorro', 'emergência'];
-    const isUrgent = urgencyKeywords.some(k => textBody.toLowerCase().includes(k));
+    // Palavra inteira: "presa" dentro de "empresa" disparava urgência falsa
+    const isUrgent = /(?<![\p{L}])(urgente|urgência|preso|presa|mandado|busca e apreensão|acidente|socorro|emergência)(?![\p{L}])/iu.test(textBody);
     if (isUrgent) {
       io?.emit('urgent_alert', { phone, body: textBody, timestamp: Date.now() });
       await sendMessage(phone, MSG_URGENCIA_AGUARDAR);
