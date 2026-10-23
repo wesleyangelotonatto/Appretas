@@ -162,21 +162,22 @@ export function ajudarSufixo(g: Genero): string {
 
 // ─── Mensagens fixas com suporte a gênero ────────────────────────────────────
 
-// Texto fixo definido por Wesley: não é gerado por IA nem varia com o gênero.
-// Era a correção que ele mais repetia ao revisar rascunhos — explicar que ela
-// ajuda por causa do volume, em vez de "estou disponível para receber".
-export function MSG_INICIAL(g: Genero = 'N'): string {
-  return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia. Consegue escrever aqui como posso ${ajudarSufixo(g)}?`;
+// Apresentação base — sem pergunta. Usada como bloco comum às variantes abaixo.
+export function MSG_INICIAL(_g: Genero = 'N'): string {
+  return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia.`;
 }
 
-// Usada quando o cliente já explicou o assunto no primeiro contato — não faz sentido
-// perguntar "como posso ajudar" se ele já disse o que precisa.
+// Usada quando o cliente já explicou o assunto: reconhece o recebimento sem perguntar
+// o que ele precisa, pois já sabemos — irei repassar ao Dr. Wesley.
 export function MSG_INICIAL_COM_ASSUNTO(_g: Genero = 'N'): string {
-  return `Olá. Aqui é a *Iara*, *secretária* do Dr. Wesley Veiga. Estou ajudando ele a receber e responder as mensagens em razão da grande quantidade de mensagens por dia. Irei repassar a situação ao Dr. Wesley e logo ele lhe dará um retorno.`;
+  return `${MSG_INICIAL()} Irei repassar a situação ao Dr. Wesley e logo ele lhe dará um retorno.`;
 }
 
+// Usada quando não foi possível identificar o assunto nas mensagens recebidas:
+// pergunta de forma direta e específica, sem a frase genérica "como posso ajudar".
 export function SAUDACAO(g: Genero = 'N'): string {
-  return MSG_INICIAL(g);
+  const tratamento = g === 'F' ? 'a senhora' : g === 'M' ? 'o senhor' : 'você';
+  return `${MSG_INICIAL(g)} Para que eu possa repassar ao Dr. Wesley, poderia me informar qual o assunto que ${tratamento} precisa tratar?`;
 }
 
 // Sem a apresentação no corpo: toda mensagem já sai assinada com "Iara - Secretária"

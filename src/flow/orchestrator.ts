@@ -307,8 +307,10 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // a saudação não seja enviada de novo.
     if (!session) {
       upsertSession(phone, { name: waName || phone, status: 'ativo' });
-      const jaExplicouAssunto = primeiraMessagemComAssunto(textBody);
-      const saudacao = jaExplicouAssunto ? MSG_INICIAL_COM_ASSUNTO(genero) : SAUDACAO(genero);
+      // Tenta detectar o assunto: primeiro por regex (rápido), depois por IA se ambíguo.
+      // Só pergunta ao cliente quando nenhuma das análises consegue identificar o tema.
+      const assuntoDetectado = primeiraMessagemComAssunto(textBody) || await detectarAssuntoComIA(textBody);
+      const saudacao = assuntoDetectado ? MSG_INICIAL_COM_ASSUNTO(genero) : SAUDACAO(genero);
       await deliverOrQueue(phone, saudacao, 'saudação inicial', io, waName);
       registrarTipoEnviado(phone, 'saudacao');
       return;
@@ -676,6 +678,36 @@ APENAS JSON: {"precisaResponder": true ou false}`;
   } catch (err) {
     console.error('[orchestrator] falha ao avaliar se precisa responder:', err);
     return true;
+  }
+}
+
+// Verifica via IA se o bloco de mensagens de um primeiro contato já deixa claro
+// qual é o assunto — complementa a checagem por regex quando o texto é ambíguo.
+// Em caso de erro retorna false (seguro: a saudação com pergunta é enviada).
+async function detectarAssuntoComIA(texto: string): Promise<boolean> {
+  const t = (texto || '').trim();
+  if (!t || t.length < 15) return false;
+  try {
+    const prompt = `Um novo cliente entrou em contato com um escritório de advocacia pelo WhatsApp e enviou as seguintes mensagens:
+
+"${t.slice(0, 1000)}"
+
+O assunto já está claro o suficiente para o escritório entender o que o cliente precisa, sem precisar perguntar? Considere "claro" qualquer menção a: um problema jurídico, situação pessoal, pedido de orientação, nome de pessoa envolvida, valor, imóvel, processo, dívida, contrato, ou qualquer assunto concreto além de uma saudação simples.
+
+APENAS JSON: {"assuntoClaro": true ou false}`;
+
+    const r = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 50,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    const b = r.content[0];
+    const bruto = b && b.type === 'text' ? b.text : '{}';
+    const m = bruto.match(/\{[\s\S]*\}/);
+    return JSON.parse(m ? m[0] : bruto).assuntoClaro === true;
+  } catch (err) {
+    console.error('[orchestrator] falha ao detectar assunto via IA:', err);
+    return false;
   }
 }
 
