@@ -173,6 +173,13 @@ setInterval(() => {
     .catch(err => console.error('[janelas] erro na verificação periódica:', err));
 }, 60 * 1000);
 
+// A cada minuto: reenvia o que ficou na fila por instabilidade do Waspeed
+setInterval(() => {
+  import('./responder/send')
+    .then(m => m.processarFilaEnvios())
+    .catch(err => console.error('[fila] erro na verificação periódica:', err));
+}, 60 * 1000);
+
 cron.schedule('30 3 * * *', async () => {                                    // todo dia às 03h30 — limpa IDs de eventos antigos
   const { limparEventosAntigos } = await import('./memory/db');
   limparEventosAntigos();

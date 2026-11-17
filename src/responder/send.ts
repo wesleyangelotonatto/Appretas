@@ -1,5 +1,8 @@
 import axios from 'axios';
-import { getSetting, salvarTreinamento } from '../memory/db';
+import {
+  getSetting, salvarTreinamento, enfileirarEnvio, registrarEnvioFalho,
+  enviosParaTentar, atualizarEnvioFila, limparEnviosAntigos,
+} from '../memory/db';
 
 const API_URL = () => process.env.WASPEED_API_URL || 'https://api-whatsapp.wascript.com.br';
 const TOKEN = () => process.env.WASPEED_TOKEN || '';
@@ -84,7 +87,7 @@ function interceptadoParaCalibragem(phone: string, texto: string, rotulo: string
 export async function sendMessage(
   phone: string,
   text: string,
-  opts: { assinar?: boolean } = {}
+  opts: { assinar?: boolean; rotulo?: string } = {}
 ): Promise<void> {
   if (sistemaPausado()) {
     console.log(`[send] BLOQUEADO (sistema pausado) — mensagem NÃO enviada para ${phone}`);
@@ -101,13 +104,99 @@ export async function sendMessage(
   }
   registrarEnvioProprio(phone, corpo);
   try {
-    await axios.post(`${API_URL()}/api/enviar-texto/${TOKEN()}`, {
-      phone,
-      message: corpo,
-    });
+    await postarTexto(phone, corpo);
   } catch (err: any) {
-    console.error('[send] erro ao enviar mensagem:', err?.response?.data || err.message);
+    const detalhe = descreverErro(err);
+    if (erroTransitorio(err)) {
+      // Waspeed instável: a mensagem não se perde, entra na fila e é reenviada sozinha
+      const id = enfileirarEnvio(phone, corpo, opts.rotulo || 'mensagem', detalhe, ESPERAS_REENVIO_SEG[0]);
+      console.warn(`[send] falha temporária para ${phone} (${detalhe}) — na fila de reenvio #${id}`);
+      return;
+    }
+    // Erro definitivo (número inválido, requisição recusada): não adianta repetir
+    registrarEnvioFalho(phone, corpo, opts.rotulo || 'mensagem', detalhe);
+    console.error('[send] erro ao enviar mensagem:', detalhe);
     throw err;
+  }
+}
+
+// ─── Fila de reenvio ─────────────────────────────────────────────────────────
+
+// Espera crescente entre tentativas: 1, 2, 5, 10, 30 min, 1 h, 2 h, 4 h, 8 h
+const ESPERAS_REENVIO_SEG = [60, 120, 300, 600, 1800, 3600, 7200, 14400, 28800];
+// Depois de 24 h tentando, o envio vai para "Envios perdidos" e espera ação manual
+const JANELA_REENVIO_SEG = 24 * 3600;
+
+async function postarTexto(phone: string, corpo: string): Promise<void> {
+  await axios.post(`${API_URL()}/api/enviar-texto/${TOKEN()}`, { phone, message: corpo }, { timeout: 60000 });
+}
+
+function descreverErro(err: any): string {
+  const status = err?.response?.status;
+  const dados = err?.response?.data;
+  const msg = typeof dados === 'string' ? dados : dados?.error || dados?.message || err?.message || 'erro desconhecido';
+  return status ? `HTTP ${status}: ${String(msg).slice(0, 300)}` : String(msg).slice(0, 300);
+}
+
+// Sem resposta, tempo esgotado, 5xx, 408 e 429 são instabilidade; demais 4xx são definitivos
+function erroTransitorio(err: any): boolean {
+  const status = err?.response?.status;
+  if (!status) return true;
+  if (status >= 500) return true;
+  return status === 408 || status === 429;
+}
+
+let processandoFila = false;
+
+export async function processarFilaEnvios(): Promise<void> {
+  if (processandoFila) return;
+  // Pausa e calibragem seguram a fila: nada sai enquanto estiverem ligadas
+  if (sistemaPausado() || modoCalibragem()) return;
+  processandoFila = true;
+  try {
+    limparEnviosAntigos();
+    const lote = enviosParaTentar(20);
+    for (const envio of lote) {
+      try {
+        await postarTexto(envio.phone, envio.corpo);
+        registrarEnvioProprio(envio.phone, envio.corpo);
+        atualizarEnvioFila(envio.id, { status: 'enviado', erro: null });
+        console.log(`[fila] #${envio.id} reenviado para ${envio.phone} na tentativa ${envio.tentativas + 1}`);
+      } catch (err: any) {
+        const detalhe = descreverErro(err);
+        const tentativas = envio.tentativas + 1;
+        const agora = Math.floor(Date.now() / 1000);
+        const esgotou = !erroTransitorio(err) || agora - envio.inicio_tentativas >= JANELA_REENVIO_SEG;
+        if (esgotou) {
+          atualizarEnvioFila(envio.id, { status: 'falhou', tentativas, erro: detalhe });
+          console.error(`[fila] #${envio.id} para ${envio.phone} foi para Envios perdidos: ${detalhe}`);
+        } else {
+          const espera = ESPERAS_REENVIO_SEG[Math.min(tentativas - 1, ESPERAS_REENVIO_SEG.length - 1)];
+          atualizarEnvioFila(envio.id, { status: 'pendente', tentativas, erro: detalhe, proximaTentativa: agora + espera });
+          console.warn(`[fila] #${envio.id} falhou de novo (${detalhe}); próxima tentativa em ${Math.round(espera / 60)} min`);
+        }
+      }
+      // Intervalo entre reenvios para não disparar em rajada após uma queda
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  } catch (err) {
+    console.error('[fila] erro ao processar fila de envios:', err);
+  } finally {
+    processandoFila = false;
+  }
+}
+
+// Reenvio manual pelo painel: tenta na hora, e se falhar de novo volta para a fila
+export async function reenviarAgora(envio: { id: number; phone: string; corpo: string }): Promise<boolean> {
+  if (sistemaPausado() || modoCalibragem()) return false;
+  try {
+    await postarTexto(envio.phone, envio.corpo);
+    registrarEnvioProprio(envio.phone, envio.corpo);
+    atualizarEnvioFila(envio.id, { status: 'enviado', erro: null });
+    return true;
+  } catch (err: any) {
+    atualizarEnvioFila(envio.id, { status: 'falhou', erro: descreverErro(err) });
+    return false;
   }
 }
 

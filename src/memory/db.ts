@@ -211,6 +211,24 @@ export async function initDb(): Promise<void> {
       created_at INTEGER DEFAULT (unixepoch())
     );
 
+    -- Fila de envio: mensagem que não saiu por instabilidade do Waspeed fica aqui
+    -- e é reenviada sozinha. Após a janela de tentativas vira 'falhou' e aparece
+    -- no menu "Envios perdidos" do painel.
+    CREATE TABLE IF NOT EXISTS envios_fila (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT NOT NULL,
+      corpo TEXT NOT NULL,
+      rotulo TEXT,
+      status TEXT NOT NULL DEFAULT 'pendente',
+      tentativas INTEGER NOT NULL DEFAULT 0,
+      ultimo_erro TEXT,
+      proxima_tentativa INTEGER NOT NULL,
+      inicio_tentativas INTEGER NOT NULL DEFAULT (unixepoch()),
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_envios_fila ON envios_fila(status, proxima_tentativa);
+
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
@@ -890,4 +908,100 @@ export function setSetting(key: string, value: string | null) {
     getDb().prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, unixepoch())')
       .run(key, value);
   }
+}
+
+// ─── Fila de envio ────────────────────────────────────────────────────────────
+
+export interface EnvioFila {
+  id: number; phone: string; corpo: string; rotulo: string | null; status: string;
+  tentativas: number; ultimo_erro: string | null; proxima_tentativa: number;
+  inicio_tentativas: number; created_at: number;
+}
+
+export function enfileirarEnvio(phone: string, corpo: string, rotulo: string, erro: string, atrasoSeg: number): number {
+  const agora = Math.floor(Date.now() / 1000);
+  const r = getDb().prepare(`
+    INSERT INTO envios_fila (phone, corpo, rotulo, status, tentativas, ultimo_erro, proxima_tentativa, inicio_tentativas)
+    VALUES (?, ?, ?, 'pendente', 1, ?, ?, ?)
+  `).run(phone, corpo, rotulo, erro.slice(0, 500), agora + atrasoSeg, agora);
+  return Number(r.lastInsertRowid);
+}
+
+export function registrarEnvioFalho(phone: string, corpo: string, rotulo: string, erro: string): void {
+  const agora = Math.floor(Date.now() / 1000);
+  getDb().prepare(`
+    INSERT INTO envios_fila (phone, corpo, rotulo, status, tentativas, ultimo_erro, proxima_tentativa, inicio_tentativas)
+    VALUES (?, ?, ?, 'falhou', 1, ?, ?, ?)
+  `).run(phone, corpo, rotulo, erro.slice(0, 500), agora, agora);
+}
+
+export function enviosParaTentar(limite: number): EnvioFila[] {
+  const agora = Math.floor(Date.now() / 1000);
+  return getDb().prepare(`
+    SELECT * FROM envios_fila WHERE status = 'pendente' AND proxima_tentativa <= ?
+    ORDER BY proxima_tentativa ASC LIMIT ?
+  `).all(agora, limite) as EnvioFila[];
+}
+
+export function atualizarEnvioFila(id: number, campos: { status: string; tentativas?: number; erro?: string | null; proximaTentativa?: number }): void {
+  const atual = getDb().prepare('SELECT * FROM envios_fila WHERE id = ?').get(id) as EnvioFila | undefined;
+  if (!atual) return;
+  getDb().prepare(`
+    UPDATE envios_fila SET status = ?, tentativas = ?, ultimo_erro = ?, proxima_tentativa = ?, updated_at = unixepoch()
+    WHERE id = ?
+  `).run(
+    campos.status,
+    campos.tentativas ?? atual.tentativas,
+    campos.erro === undefined ? atual.ultimo_erro : (campos.erro ? campos.erro.slice(0, 500) : null),
+    campos.proximaTentativa ?? atual.proxima_tentativa,
+    id,
+  );
+}
+
+export function listarEnviosFila(status: string[]): EnvioFila[] {
+  const marcadores = status.map(() => '?').join(',');
+  return getDb().prepare(`
+    SELECT * FROM envios_fila WHERE status IN (${marcadores}) ORDER BY created_at DESC LIMIT 200
+  `).all(...status) as EnvioFila[];
+}
+
+export function contarEnviosPerdidos(): number {
+  const r = getDb().prepare(`SELECT COUNT(*) AS n FROM envios_fila WHERE status = 'falhou'`).get() as { n: number };
+  return r.n;
+}
+
+// Volta um envio perdido para a fila, com nova janela de tentativas
+export function reagendarEnvio(id: number): boolean {
+  const agora = Math.floor(Date.now() / 1000);
+  const r = getDb().prepare(`
+    UPDATE envios_fila SET status = 'pendente', tentativas = 0, proxima_tentativa = ?, inicio_tentativas = ?, updated_at = unixepoch()
+    WHERE id = ? AND status = 'falhou'
+  `).run(agora, agora, id);
+  return r.changes > 0;
+}
+
+export function reagendarTodosEnviosPerdidos(): number {
+  const agora = Math.floor(Date.now() / 1000);
+  const r = getDb().prepare(`
+    UPDATE envios_fila SET status = 'pendente', tentativas = 0, proxima_tentativa = ?, inicio_tentativas = ?, updated_at = unixepoch()
+    WHERE status = 'falhou'
+  `).run(agora, agora);
+  return r.changes;
+}
+
+export function descartarEnvio(id: number): boolean {
+  const r = getDb().prepare(`
+    UPDATE envios_fila SET status = 'descartado', updated_at = unixepoch() WHERE id = ? AND status IN ('falhou','pendente')
+  `).run(id);
+  return r.changes > 0;
+}
+
+export function limparEnviosAntigos(): void {
+  getDb().prepare(`
+    DELETE FROM envios_fila WHERE status IN ('enviado','descartado') AND updated_at < unixepoch() - 7 * 86400
+  `).run();
+}
+
+export function getEnvioFila(id: number): EnvioFila | undefined {
+  return getDb().prepare('SELECT * FROM envios_fila WHERE id = ?').get(id) as EnvioFila | undefined;
 }

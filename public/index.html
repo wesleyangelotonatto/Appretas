@@ -137,6 +137,7 @@
   <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Modo Treino: desligado</button>
   <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
   <button onclick="abrirRelatorios()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #9b59b6;background:#1a0a2d;color:#9b59b6;cursor:pointer;">Relatórios</button>
+  <button id="btn-perdidos" onclick="abrirPerdidos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Envios perdidos (<span id="perdidos-count">0</span>)</button>
   <div class="integration-status">
     <div class="int-item"><div class="int-dot ok" id="dot-waspeed"></div> Waspeed</div>
     <div class="int-item"><div class="int-dot ok" id="dot-trello"></div> Trello</div>
@@ -168,6 +169,25 @@
     <div id="avisos-list" style="max-height:60vh;overflow-y:auto;"></div>
     <div class="modal-actions">
       <button class="btn" style="background:var(--surface2)" onclick="document.getElementById('modal-avisos').classList.remove('open')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Envios perdidos -->
+<div class="modal-overlay" id="modal-perdidos">
+  <div class="modal" style="max-width:860px;width:94%;">
+    <h3>Envios perdidos</h3>
+    <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+      Quando o Waspeed falha, a mensagem entra numa fila e é reenviada sozinha por até 24 horas.
+      Aqui ficam as que não saíram nesse período, ou que o Waspeed recusou. Reenvie uma a uma, todas de uma vez, ou descarte.
+    </p>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+      <button class="btn btn-followup" onclick="reenviarTodosPerdidos()">Reenviar todos</button>
+      <span id="perdidos-status" style="font-size:12px;color:var(--text-muted);"></span>
+    </div>
+    <div id="perdidos-list" style="max-height:60vh;overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn" style="background:var(--surface2)" onclick="document.getElementById('modal-perdidos').classList.remove('open')">Fechar</button>
     </div>
   </div>
 </div>
@@ -1260,6 +1280,69 @@
     }
   }
   // ─────────────────────────────────────────────────────────────────────────────
+
+  // ─── Envios perdidos: fila de reenvio do Waspeed ─────────────────────────
+  async function carregarPerdidos() {
+    try {
+      const d = await (await fetch('/command/envios-perdidos')).json();
+      const n = d.total || 0;
+      document.getElementById('perdidos-count').textContent = n;
+      const btn = document.getElementById('btn-perdidos');
+      btn.style.borderColor = n ? 'var(--red)' : 'var(--border)';
+      btn.style.color = n ? 'var(--red)' : 'var(--text-muted)';
+      renderPerdidos(d);
+    } catch(e) {}
+  }
+
+  function renderPerdidos(d) {
+    const el = document.getElementById('perdidos-list');
+    const quando = t => new Date(t * 1000).toLocaleString('pt-BR');
+    const linha = (e, perdido) => `
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">
+          ${escHtml(e.phone)} · ${escHtml(e.rotulo || 'mensagem')} · criado ${quando(e.created_at)} · ${e.tentativas} tentativa(s)
+        </div>
+        <div style="white-space:pre-wrap;font-size:13px;margin-bottom:6px;">${escHtml(e.corpo)}</div>
+        <div style="font-size:11px;color:var(--red);margin-bottom:6px;">${escHtml(e.ultimo_erro || '')}</div>
+        ${perdido ? `<button class="btn btn-followup" onclick="reenviarPerdido(${e.id})">Reenviar</button>
+        <button class="btn" style="background:var(--surface2);border:1px solid var(--red);color:var(--red);font-size:11px;" onclick="descartarPerdido(${e.id})">Descartar</button>`
+        : `<span style="font-size:11px;color:var(--orange);">na fila — próxima tentativa ${quando(e.proxima_tentativa)}</span>`}
+      </div>`;
+    let h = '';
+    if (d.perdidos.length) h += d.perdidos.map(e => linha(e, true)).join('');
+    else h += '<p style="font-size:13px;color:var(--text-muted);">Nenhum envio perdido.</p>';
+    if (d.naFila.length) h += '<h4 style="margin:14px 0 8px;font-size:13px;">Aguardando reenvio automático</h4>' + d.naFila.map(e => linha(e, false)).join('');
+    el.innerHTML = h;
+  }
+
+  function abrirPerdidos() {
+    document.getElementById('modal-perdidos').classList.add('open');
+    carregarPerdidos();
+  }
+
+  async function reenviarPerdido(id) {
+    const st = document.getElementById('perdidos-status');
+    st.textContent = 'reenviando...';
+    const r = await (await fetch('/command/envios-perdidos/' + id + '/reenviar', {method:'POST'})).json();
+    st.textContent = r.ok ? 'Enviado.' : (r.error || 'Não saiu de novo — continua na lista.');
+    carregarPerdidos();
+  }
+
+  async function reenviarTodosPerdidos() {
+    if (!confirm('Devolver todos os envios perdidos para a fila? Eles saem aos poucos, com intervalo entre um e outro.')) return;
+    const r = await (await fetch('/command/envios-perdidos/reenviar-todos', {method:'POST'})).json();
+    document.getElementById('perdidos-status').textContent = r.reagendados + ' devolvido(s) à fila.';
+    carregarPerdidos();
+  }
+
+  async function descartarPerdido(id) {
+    if (!confirm('Descartar este envio? Ele não será mais enviado.')) return;
+    await fetch('/command/envios-perdidos/' + id + '/descartar', {method:'POST'});
+    carregarPerdidos();
+  }
+
+  carregarPerdidos();
+  setInterval(carregarPerdidos, 60000);
 </script>
 
 <!-- Modal Relatórios Diários -->

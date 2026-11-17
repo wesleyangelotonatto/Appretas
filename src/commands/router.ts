@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { parseCommand } from '../responder/claude';
-import { sendMessage, sendFile, sistemaPausado, modoCalibragem } from '../responder/send';
+import { sendMessage, sendFile, sistemaPausado, modoCalibragem, reenviarAgora } from '../responder/send';
 import {
   saveMessage, upsertSession, getHistory, scheduleFollowUp,
   setContactInstruction, addBlacklist, getPendingApprovals, deletePendingApproval, deleteAllPendingApprovals,
@@ -10,6 +10,7 @@ import {
   salvarTreinamento, listarTreinamento, contarTreinamento,
   listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, descartarTodosAvisos, atualizarContatoAviso, atualizarDadosAviso,
   salvarContatoProcesso, listarContatosProcesso,
+  listarEnviosFila, contarEnviosPerdidos, getEnvioFila, reagendarTodosEnviosPerdidos, descartarEnvio,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -596,3 +597,30 @@ async function executeCommand(parsed: any, io: any): Promise<any> {
       return { unknown: true };
   }
 }
+
+// ─── Envios perdidos ─────────────────────────────────────────────────────────
+
+commandRouter.get('/envios-perdidos', (_req, res) => {
+  res.json({
+    perdidos: listarEnviosFila(['falhou']),
+    naFila: listarEnviosFila(['pendente']),
+    total: contarEnviosPerdidos(),
+  });
+});
+
+commandRouter.post('/envios-perdidos/reenviar-todos', (_req, res) => {
+  // Devolve todos à fila; a verificação periódica reenvia com intervalo entre eles
+  res.json({ ok: true, reagendados: reagendarTodosEnviosPerdidos() });
+});
+
+commandRouter.post('/envios-perdidos/:id/reenviar', async (req: Request, res: Response) => {
+  const envio = getEnvioFila(Number(req.params.id));
+  if (!envio || envio.status !== 'falhou') return res.status(404).json({ error: 'envio não encontrado' });
+  if (sistemaPausado() || modoCalibragem()) return res.status(409).json({ error: 'secretária pausada ou em calibragem' });
+  const ok = await reenviarAgora(envio);
+  res.json({ ok });
+});
+
+commandRouter.post('/envios-perdidos/:id/descartar', (req: Request, res: Response) => {
+  res.json({ ok: descartarEnvio(Number(req.params.id)) });
+});
