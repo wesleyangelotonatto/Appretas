@@ -1312,6 +1312,14 @@
     if (d.perdidos.length) h += d.perdidos.map(e => linha(e, true)).join('');
     else h += '<p style="font-size:13px;color:var(--text-muted);">Nenhum envio perdido.</p>';
     if (d.naFila.length) h += '<h4 style="margin:14px 0 8px;font-size:13px;">Aguardando reenvio automático</h4>' + d.naFila.map(e => linha(e, false)).join('');
+    if (d.semConfirmacao && d.semConfirmacao.length) {
+      h += '<h4 style="margin:14px 0 8px;font-size:13px;">Avisos sem confirmação de envio (não anotados no Trello)</h4>' +
+        d.semConfirmacao.map(c => `<div style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;">
+          ${escHtml(c.phone)} · ${escHtml(c.rotulo || 'aviso')} · ${quando(c.criado_em)}<br>
+          <span style="color:var(--text-muted)">${escHtml(c.nota)}</span><br>
+          <span style="color:var(--red)">${c.status === 'erro_trello' ? 'Enviado ao cliente, mas o Trello não aceitou a anotação' : 'O WhatsApp não confirmou o envio em 24 h — confira se o cliente recebeu'}</span>
+        </div>`).join('');
+    }
     el.innerHTML = h;
   }
 

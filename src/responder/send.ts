@@ -2,7 +2,14 @@ import axios from 'axios';
 import {
   getSetting, salvarTreinamento, enfileirarEnvio, registrarEnvioFalho,
   enviosParaTentar, atualizarEnvioFila, limparEnviosAntigos,
+  registrarConfirmacaoPendente, confirmacoesPendentesPorChave, marcarConfirmacao, expirarConfirmacoes,
 } from '../memory/db';
+import { adicionarNotaCard } from '../integrations/trello';
+
+// Resultado de um envio: só 'enviado' e 'na_fila' significam que a mensagem vai
+// (ou já foi) para o cliente. Pausa, calibragem e duplicada nunca saem.
+export type StatusEnvio = 'enviado' | 'na_fila' | 'bloqueado' | 'calibragem' | 'duplicado';
+export interface ResultadoEnvio { status: StatusEnvio; corpo: string; }
 
 const API_URL = () => process.env.WASPEED_API_URL || 'https://api-whatsapp.wascript.com.br';
 const TOKEN = () => process.env.WASPEED_TOKEN || '';
@@ -23,7 +30,7 @@ export function sistemaPausado(): boolean {
 const enviadasRecentemente = new Map<string, number>();
 const ECO_TTL_MS = 5 * 60 * 1000;
 
-function chaveEco(phone: string, text: string): string {
+export function chaveEco(phone: string, text: string): string {
   return `${phone.replace(/[^0-9]/g, '').slice(-10)}|${text.trim().slice(0, 120)}`;
 }
 
@@ -88,30 +95,31 @@ export async function sendMessage(
   phone: string,
   text: string,
   opts: { assinar?: boolean; rotulo?: string } = {}
-): Promise<void> {
+): Promise<ResultadoEnvio> {
+  const corpo = opts.assinar === false ? text : assinarComoIara(text);
   if (sistemaPausado()) {
     console.log(`[send] BLOQUEADO (sistema pausado) — mensagem NÃO enviada para ${phone}`);
-    return;
+    return { status: 'bloqueado', corpo };
   }
-  if (interceptadoParaCalibragem(phone, opts.assinar === false ? text : assinarComoIara(text), 'mensagem')) return;
-  const corpo = opts.assinar === false ? text : assinarComoIara(text);
+  if (interceptadoParaCalibragem(phone, corpo, 'mensagem')) return { status: 'calibragem', corpo };
   // Segunda barreira contra duplicidade: a Iara nunca repete a mesma mensagem
   // para o mesmo contato em poucos minutos — se isso acontece é defeito, não
   // intenção. Não vale para envios do Wesley, que pode repetir o que quiser.
   if (opts.assinar !== false && isEcoDeEnvioProprio(phone, corpo)) {
     console.log(`[send] DUPLICADA descartada — mesma mensagem já enviada há pouco para ${phone}`);
-    return;
+    return { status: 'duplicado', corpo };
   }
   registrarEnvioProprio(phone, corpo);
   try {
     await postarTexto(phone, corpo);
+    return { status: 'enviado', corpo };
   } catch (err: any) {
     const detalhe = descreverErro(err);
     if (erroTransitorio(err)) {
       // Waspeed instável: a mensagem não se perde, entra na fila e é reenviada sozinha
       const id = enfileirarEnvio(phone, corpo, opts.rotulo || 'mensagem', detalhe, ESPERAS_REENVIO_SEG[0]);
       console.warn(`[send] falha temporária para ${phone} (${detalhe}) — na fila de reenvio #${id}`);
-      return;
+      return { status: 'na_fila', corpo };
     }
     // Erro definitivo (número inválido, requisição recusada): não adianta repetir
     registrarEnvioFalho(phone, corpo, opts.rotulo || 'mensagem', detalhe);
@@ -247,4 +255,41 @@ export async function createNote(phone: string, note: string): Promise<void> {
   } catch (err: any) {
     console.error('[send] erro ao criar nota:', err?.response?.data || err.message);
   }
+}
+
+// ─── Anotação no Trello só com envio confirmado ──────────────────────────────
+
+// Deixa a anotação pendente até o eco da mensagem chegar pelo webhook (prova de
+// que ela saiu pelo WhatsApp). O Waspeed não informa "entregue" nem "lido", então
+// o eco é a confirmação mais forte disponível. Mensagem bloqueada, em calibragem
+// ou duplicada nunca gera anotação.
+export function anotarNoTrelloAoConfirmar(phone: string, resultado: ResultadoEnvio, cardId: string, nota: string, rotulo: string): void {
+  if (resultado.status !== 'enviado' && resultado.status !== 'na_fila') {
+    console.log(`[trello] não anotado (${resultado.status}) — card ${cardId}, ${phone}`);
+    return;
+  }
+  registrarConfirmacaoPendente(chaveEco(phone, resultado.corpo), phone, cardId, nota, rotulo);
+}
+
+// Chamado pelo webhook a cada mensagem "fromMe": se for o eco de um envio com
+// anotação pendente, grava no Trello com a hora da confirmação
+export async function confirmarEnvioPorEco(phone: string, texto: string): Promise<void> {
+  const pendentes = confirmacoesPendentesPorChave(chaveEco(phone, texto));
+  if (!pendentes.length) return;
+  const hora = new Date().toLocaleString('pt-BR', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  for (const p of pendentes) {
+    try {
+      await adicionarNotaCard(p.card_id, `${p.nota} — envio confirmado pelo WhatsApp em ${hora}`, { lancarErro: true });
+      marcarConfirmacao(p.id, 'confirmado');
+      console.log(`[trello] anotado após confirmação do envio — card ${p.card_id}, ${phone}`);
+    } catch (err) {
+      marcarConfirmacao(p.id, 'erro_trello');
+      console.error(`[trello] envio confirmado, mas falhou ao anotar no card ${p.card_id}:`, err);
+    }
+  }
+}
+
+export function expirarConfirmacoesSemEco(): void {
+  const n = expirarConfirmacoes();
+  if (n) console.warn(`[trello] ${n} aviso(s) sem confirmação de envio em 24 h — nada foi anotado no Trello`);
 }

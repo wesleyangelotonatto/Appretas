@@ -65,7 +65,7 @@ export async function atualizarCardTrello(cardId: string, updates: { name?: stri
   }
 }
 
-export async function adicionarNotaCard(cardId: string, nota: string): Promise<void> {
+export async function adicionarNotaCard(cardId: string, nota: string, opts: { lancarErro?: boolean } = {}): Promise<void> {
   try {
     await axios.post(`${BASE}/cards/${cardId}/actions/comments`, {
       text: nota,
@@ -73,6 +73,7 @@ export async function adicionarNotaCard(cardId: string, nota: string): Promise<v
     });
   } catch (err) {
     console.error('[trello] erro ao adicionar nota no card:', err);
+    if (opts.lancarErro) throw err;
   }
 }
 

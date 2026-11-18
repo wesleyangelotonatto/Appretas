@@ -1,5 +1,5 @@
-import { getCardsPrazos, adicionarNotaCard, extrairTelefoneDeTexto } from '../integrations/trello';
-import { sendMessage } from '../responder/send';
+import { getCardsPrazos, extrairTelefoneDeTexto } from '../integrations/trello';
+import { sendMessage, anotarNoTrelloAoConfirmar } from '../responder/send';
 import { lookupSheets, lookupSheetsPorProcesso } from '../lookup/sheets';
 
 // Prazos: verifica lista PRAZOS no Trello todos os dias úteis às 08h
@@ -55,10 +55,11 @@ export async function cronPrazos(): Promise<void> {
 
       const msg = `Olá, tudo bem? Aqui é a Iara Secretária do Dr. Wesley. Somente passando pra te avisar que na data de hoje nós vamos cumprir um prazo aqui no seu processo (${processInfo}). Não é nada pra se preocupar. É só pra te mostrar que estamos cuidando do processo e dando andamento nele. Obrigado, qualquer dúvida fico à disposição.`;
 
-      await sendMessage(phone, msg);
-      await adicionarNotaCard(card.id, `[IARA] Aviso de prazo enviado ao cliente em ${today.toLocaleDateString('pt-BR')}`);
+      const resultado = await sendMessage(phone, msg, { rotulo: 'aviso de prazo' });
+      // Só anota no Trello depois que o WhatsApp confirmar que a mensagem saiu
+      anotarNoTrelloAoConfirmar(phone, resultado, card.id, `[IARA] Aviso de prazo enviado ao cliente em ${today.toLocaleDateString('pt-BR')}`, 'aviso de prazo');
 
-      console.log(`[cron-prazos] aviso enviado para ${clientName || phone}`);
+      console.log(`[cron-prazos] aviso para ${clientName || phone}: ${resultado.status}`);
     } catch (err) {
       console.error('[cron-prazos] erro ao processar card:', card.id, err);
     }

@@ -229,6 +229,21 @@ export async function initDb(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_envios_fila ON envios_fila(status, proxima_tentativa);
 
+    -- Anotação no Trello que só é gravada quando o eco da mensagem confirma que
+    -- ela saiu pelo WhatsApp. Sem eco em 24 h, fica 'sem_confirmacao' e nada é anotado.
+    CREATE TABLE IF NOT EXISTS confirmacoes_envio (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chave TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      card_id TEXT NOT NULL,
+      nota TEXT NOT NULL,
+      rotulo TEXT,
+      status TEXT NOT NULL DEFAULT 'pendente',
+      criado_em INTEGER NOT NULL DEFAULT (unixepoch()),
+      confirmado_em INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_confirmacoes_chave ON confirmacoes_envio(chave, status);
+
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
@@ -1004,4 +1019,43 @@ export function limparEnviosAntigos(): void {
 
 export function getEnvioFila(id: number): EnvioFila | undefined {
   return getDb().prepare('SELECT * FROM envios_fila WHERE id = ?').get(id) as EnvioFila | undefined;
+}
+
+// ─── Confirmação de envio antes de anotar no Trello ──────────────────────────
+
+export interface ConfirmacaoEnvio {
+  id: number; chave: string; phone: string; card_id: string; nota: string;
+  rotulo: string | null; status: string; criado_em: number; confirmado_em: number | null;
+}
+
+export function registrarConfirmacaoPendente(chave: string, phone: string, cardId: string, nota: string, rotulo: string): void {
+  getDb().prepare(`
+    INSERT INTO confirmacoes_envio (chave, phone, card_id, nota, rotulo) VALUES (?, ?, ?, ?, ?)
+  `).run(chave, phone, cardId, nota, rotulo);
+}
+
+export function confirmacoesPendentesPorChave(chave: string): ConfirmacaoEnvio[] {
+  return getDb().prepare(`
+    SELECT * FROM confirmacoes_envio WHERE chave = ? AND status = 'pendente' AND criado_em >= unixepoch() - 86400
+  `).all(chave) as ConfirmacaoEnvio[];
+}
+
+export function marcarConfirmacao(id: number, status: 'confirmado' | 'sem_confirmacao' | 'erro_trello'): void {
+  getDb().prepare(`
+    UPDATE confirmacoes_envio SET status = ?, confirmado_em = CASE WHEN ? = 'confirmado' THEN unixepoch() ELSE confirmado_em END WHERE id = ?
+  `).run(status, status, id);
+}
+
+// Pendentes há mais de 24 h viram 'sem_confirmacao'; devolve quantas mudaram
+export function expirarConfirmacoes(): number {
+  return getDb().prepare(`
+    UPDATE confirmacoes_envio SET status = 'sem_confirmacao' WHERE status = 'pendente' AND criado_em < unixepoch() - 86400
+  `).run().changes;
+}
+
+export function listarConfirmacoes(status: string[], limite = 100): ConfirmacaoEnvio[] {
+  const marcadores = status.map(() => '?').join(',');
+  return getDb().prepare(`
+    SELECT * FROM confirmacoes_envio WHERE status IN (${marcadores}) ORDER BY criado_em DESC LIMIT ?
+  `).all(...status, limite) as ConfirmacaoEnvio[];
 }

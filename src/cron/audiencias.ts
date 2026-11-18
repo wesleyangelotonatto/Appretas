@@ -1,5 +1,5 @@
-import { getCardsAudiencias, adicionarNotaCard, extrairTelefoneDeTexto } from '../integrations/trello';
-import { sendMessage } from '../responder/send';
+import { getCardsAudiencias, extrairTelefoneDeTexto } from '../integrations/trello';
+import { sendMessage, anotarNoTrelloAoConfirmar } from '../responder/send';
 import { lookupSheets, lookupSheetsPorProcesso } from '../lookup/sheets';
 
 // 3 ALERTAS:
@@ -58,15 +58,15 @@ export async function cronAudiencias(): Promise<void> {
       // 2º aviso: sexta-feira, audiências da próxima semana (7 dias)
       if (dayOfWeek === 5 && daysUntil > 0 && daysUntil <= 7) {
         const msg = formatAudienciaAlert(card, audienciaDate, clientName, 2);
-        await sendMessage(phone, msg);
-        await adicionarNotaCard(card.id, `[IARA] 2º aviso de audiência enviado ao cliente em ${new Date().toLocaleDateString('pt-BR')}`);
+        const resultado = await sendMessage(phone, msg, { rotulo: '2º aviso de audiência' });
+        anotarNoTrelloAoConfirmar(phone, resultado, card.id, `[IARA] 2º aviso de audiência enviado ao cliente em ${new Date().toLocaleDateString('pt-BR')}`, '2º aviso de audiência');
       }
 
       // 3º aviso: véspera (1 dia antes)
       if (daysUntil === 1) {
         const msg = formatAudienciaAlert(card, audienciaDate, clientName, 3);
-        await sendMessage(phone, msg);
-        await adicionarNotaCard(card.id, `[IARA] 3º aviso de audiência enviado ao cliente em ${new Date().toLocaleDateString('pt-BR')}`);
+        const resultado = await sendMessage(phone, msg, { rotulo: '3º aviso de audiência' });
+        anotarNoTrelloAoConfirmar(phone, resultado, card.id, `[IARA] 3º aviso de audiência enviado ao cliente em ${new Date().toLocaleDateString('pt-BR')}`, '3º aviso de audiência');
       }
     } catch (err) {
       console.error('[cron-audiencias] erro ao processar card:', card.id, err);

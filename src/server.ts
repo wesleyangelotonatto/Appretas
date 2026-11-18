@@ -176,7 +176,7 @@ setInterval(() => {
 // A cada minuto: reenvia o que ficou na fila por instabilidade do Waspeed
 setInterval(() => {
   import('./responder/send')
-    .then(m => m.processarFilaEnvios())
+    .then(m => { m.expirarConfirmacoesSemEco(); return m.processarFilaEnvios(); })
     .catch(err => console.error('[fila] erro na verificação periódica:', err));
 }, 60 * 1000);
 

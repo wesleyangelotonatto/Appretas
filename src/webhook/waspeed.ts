@@ -167,7 +167,9 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     // e detecta agendamentos, mas não processa pelo pipeline de IA
     if (fromMe) {
       const { getSession, saveMessage, upsertSession } = await import('../memory/db');
-      const { isEcoDeEnvioProprio } = await import('../responder/send');
+      const { isEcoDeEnvioProprio, confirmarEnvioPorEco } = await import('../responder/send');
+      // Eco de mensagem da própria Iara: confirma o envio e libera a anotação no Trello
+      if (body?.trim()) confirmarEnvioPorEco(phone, body).catch(err => console.error('[webhook] erro ao confirmar envio:', err));
       const session = getSession(phone);
       // O WhatsApp devolve como "fromMe" também as mensagens que a própria Iara
       // enviou. Gravá-las como fala do Wesley duplicaria o histórico e faria o

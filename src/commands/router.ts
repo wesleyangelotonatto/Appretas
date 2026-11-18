@@ -10,7 +10,7 @@ import {
   salvarTreinamento, listarTreinamento, contarTreinamento,
   listarAvisosPendentes, getAvisoPendente, marcarAvisoEnviado, marcarAvisoDescartado, descartarTodosAvisos, atualizarContatoAviso, atualizarDadosAviso,
   salvarContatoProcesso, listarContatosProcesso,
-  listarEnviosFila, contarEnviosPerdidos, getEnvioFila, reagendarTodosEnviosPerdidos, descartarEnvio,
+  listarEnviosFila, contarEnviosPerdidos, getEnvioFila, reagendarTodosEnviosPerdidos, descartarEnvio, listarConfirmacoes,
 } from '../memory/db';
 import { criarCardLead, buscarCardTrello, adicionarNotaCard } from '../integrations/trello';
 import { consultarDjen } from '../integrations/djen';
@@ -604,7 +604,8 @@ commandRouter.get('/envios-perdidos', (_req, res) => {
   res.json({
     perdidos: listarEnviosFila(['falhou']),
     naFila: listarEnviosFila(['pendente']),
-    total: contarEnviosPerdidos(),
+    semConfirmacao: listarConfirmacoes(['sem_confirmacao', 'erro_trello'], 50),
+    total: contarEnviosPerdidos() + listarConfirmacoes(['sem_confirmacao', 'erro_trello'], 1000).length,
   });
 });
 
