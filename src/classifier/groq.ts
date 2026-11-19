@@ -1,10 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { criarMensagem } from '../ia';
 import Groq from 'groq-sdk';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export type ClassificationType =
@@ -65,8 +64,7 @@ Responda APENAS com JSON válido:
 {"type": "TIPO", "confidence": 0.0-1.0, "intent": "resumo do que o contato quer"}`;
 
   try {
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const message = await criarMensagem('rapido', {
       max_tokens: 200,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -98,14 +96,28 @@ export async function transcribeAudio(mediaUrl?: string, base64?: string): Promi
     const tmpPath = path.join('/tmp', `audio_${Date.now()}.ogg`);
     fs.writeFileSync(tmpPath, audioBuffer);
 
-    const transcription = await groq.audio.transcriptions.create({
-      file: fs.createReadStream(tmpPath),
-      model: 'whisper-large-v3-turbo',
-      language: 'pt',
-    });
-
-    fs.unlinkSync(tmpPath);
-    return transcription.text;
+    // Modelo principal (MODELO_TRANSCRICAO, padrão turbo, o mais barato); se falhar,
+    // tenta uma vez o Whisper completo para o áudio não ficar sem transcrição
+    const principal = (process.env.MODELO_TRANSCRICAO || '').trim() || 'whisper-large-v3-turbo';
+    const modelos = principal === 'whisper-large-v3' ? [principal] : [principal, 'whisper-large-v3'];
+    try {
+      for (let i = 0; i < modelos.length; i++) {
+        try {
+          const transcription = await groq.audio.transcriptions.create({
+            file: fs.createReadStream(tmpPath),
+            model: modelos[i],
+            language: 'pt',
+          });
+          return transcription.text;
+        } catch (err) {
+          if (i === modelos.length - 1) throw err;
+          console.warn(`[groq] ${modelos[i]} falhou, tentando ${modelos[i + 1]}:`, (err as Error)?.message);
+        }
+      }
+      throw new Error('sem modelo de transcrição');
+    } finally {
+      try { fs.unlinkSync(tmpPath); } catch { /* já removido */ }
+    }
   } catch (err) {
     console.error('[groq] erro ao transcrever áudio:', err);
     return '[Áudio recebido — não foi possível transcrever]';

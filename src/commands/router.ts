@@ -600,6 +600,14 @@ async function executeCommand(parsed: any, io: any): Promise<any> {
 
 // ─── Envios perdidos ─────────────────────────────────────────────────────────
 
+// Custo estimado de IA por dia, função e modelo (últimos 30 dias)
+commandRouter.get('/custo-ia', async (_req, res) => {
+  const { usoIAPorDia } = await import('../memory/db');
+  const { custoEstimado, modeloDa } = await import('../ia');
+  const linhas = usoIAPorDia(30).map(l => ({ ...l, custoUSD: Number(custoEstimado(l.modelo, l.entrada, l.saida, l.cache_leitura, l.cache_escrita).toFixed(4)) }));
+  res.json({ modelos: { rapido: modeloDa('rapido'), resposta: modeloDa('resposta') }, totalUSD: Number(linhas.reduce((t, l) => t + l.custoUSD, 0).toFixed(2)), linhas });
+});
+
 commandRouter.get('/envios-perdidos', (_req, res) => {
   res.json({
     perdidos: listarEnviosFila(['falhou']),

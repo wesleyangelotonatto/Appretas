@@ -1,9 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { criarMensagem } from '../ia';
 import { buildSystemPrompt, aplicarGlossario, type Genero } from '../persona';
 import { getRecentCorrections } from '../memory/db';
 import type { ClassificationType } from '../classifier/groq';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const TYPE_INSTRUCTIONS: Record<string, string> = {
   PROCESSO_ATIVO: `O cliente é um cliente ativo com um caso em andamento — pode ser um processo judicial ou um contrato/serviço não-judicial (elaboração, revisão, consultoria). Não assuma que é sempre um processo judicial. Informe sobre o andamento de forma simples e clara, usando os dados do DJEN e Trello fornecidos quando existirem (DJEN só se aplica a processo judicial). Se não houver dados, diga que vai verificar com o Dr. Wesley.`,
@@ -58,10 +57,10 @@ FORMATO OBRIGATÓRIO: UM parágrafo curto, no máximo 3 frases. Formal, direto e
       corrections.map((c, i) => `${i + 1}. Original: "${c.original.slice(0, 700)}"\n   Corrigido: "${c.corrected.slice(0, 700)}"`).join('\n')
     : '';
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await criarMensagem('resposta', {
     max_tokens: 500,
     system: buildSystemPrompt(genero) + correctionsSection,
+    cacheSystem: true,
     messages: [{ role: 'user', content: userPrompt }],
   });
 
@@ -102,8 +101,7 @@ Exemplo: comando 'Responda: ok, vou verificar' com activePhone "5544999998888" n
 Responda APENAS com o JSON puro, sem markdown, sem \`\`\`, sem texto antes ou depois:
 {"action": "nome_da_ação", "params": {...}, "response": "confirmação em português"}`;
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await criarMensagem('resposta', {
     max_tokens: 300,
     messages: [{ role: 'user', content: prompt }],
   });

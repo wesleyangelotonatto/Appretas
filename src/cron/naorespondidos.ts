@@ -1,8 +1,7 @@
+import { criarMensagem } from '../ia';
 import { getDb, saveMessage } from '../memory/db';
 import { sendMessage } from '../responder/send';
-import Anthropic from '@anthropic-ai/sdk';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Padrões de encerramento inequívoco — atalho rápido sem custo de API para os
 // casos mais óbvios. Qualquer coisa fora dessa lista curta passa pela checagem
@@ -50,8 +49,7 @@ A ÚLTIMA mensagem foi do cliente: "${texto}"
 
 O escritório ainda deve uma resposta a essa mensagem? Responda APENAS com JSON: {"aguardando": true ou false}`;
 
-    const response = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await criarMensagem('rapido', {
       max_tokens: 50,
       messages: [{ role: 'user', content: prompt }],
     });

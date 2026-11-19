@@ -244,6 +244,19 @@ export async function initDb(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS idx_confirmacoes_chave ON confirmacoes_envio(chave, status);
 
+    -- Tokens gastos em cada chamada de IA, para o relatório de custo por dia e função
+    CREATE TABLE IF NOT EXISTS uso_ia (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      funcao TEXT NOT NULL,
+      modelo TEXT NOT NULL,
+      entrada INTEGER NOT NULL,
+      saida INTEGER NOT NULL,
+      cache_leitura INTEGER NOT NULL DEFAULT 0,
+      cache_escrita INTEGER NOT NULL DEFAULT 0,
+      em INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS idx_uso_ia_em ON uso_ia(em);
+
     CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
     CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
     CREATE INDEX IF NOT EXISTS idx_follow_ups_scheduled ON follow_ups(scheduled_at, sent);
@@ -1058,4 +1071,20 @@ export function listarConfirmacoes(status: string[], limite = 100): ConfirmacaoE
   return getDb().prepare(`
     SELECT * FROM confirmacoes_envio WHERE status IN (${marcadores}) ORDER BY criado_em DESC LIMIT ?
   `).all(...status, limite) as ConfirmacaoEnvio[];
+}
+
+export function registrarUsoIA(funcao: string, modelo: string, entrada: number, saida: number, cacheLeitura: number, cacheEscrita: number) {
+  getDb().prepare('INSERT INTO uso_ia (funcao, modelo, entrada, saida, cache_leitura, cache_escrita) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(funcao, modelo, entrada, saida, cacheLeitura, cacheEscrita);
+}
+
+export interface UsoIADia { dia: string; funcao: string; modelo: string; chamadas: number; entrada: number; saida: number; cache_leitura: number; cache_escrita: number; }
+
+export function usoIAPorDia(dias = 30): UsoIADia[] {
+  return getDb().prepare(`
+    SELECT date(em, 'unixepoch', '-3 hours') AS dia, funcao, modelo, COUNT(*) AS chamadas,
+           SUM(entrada) AS entrada, SUM(saida) AS saida, SUM(cache_leitura) AS cache_leitura, SUM(cache_escrita) AS cache_escrita
+    FROM uso_ia WHERE em >= unixepoch() - ? * 86400
+    GROUP BY dia, funcao, modelo ORDER BY dia DESC, funcao
+  `).all(dias) as UsoIADia[];
 }

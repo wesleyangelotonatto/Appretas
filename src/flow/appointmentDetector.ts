@@ -1,9 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { criarMensagem } from '../ia';
 import { createCalendarEvent } from '../integrations/calendar';
 import { saveMessage } from '../memory/db';
 import { sendMessage } from '../responder/send';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const WESLEY_NUMERO = process.env.WESLEY_NUMERO || '5544988596158';
 
@@ -55,8 +54,7 @@ Responda APENAS com JSON válido:
 
   let info: any;
   try {
-    const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const message = await criarMensagem('rapido', {
       max_tokens: 200,
       messages: [{ role: 'user', content: prompt }],
     });

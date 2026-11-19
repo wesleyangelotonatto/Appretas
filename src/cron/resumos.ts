@@ -1,11 +1,10 @@
+import { criarMensagem } from '../ia';
 import { getDb, salvarResumoDiario, getResumosDoDia } from '../memory/db';
 import { createNote, sendMessage } from '../responder/send';
 import { saveConversationSummary } from '../integrations/drive';
-import Anthropic from '@anthropic-ai/sdk';
 
 const PHONE_WESLEY = process.env.PHONE_WESLEY || '5544999110862';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Início do dia em São Paulo, como epoch real (Brasil é UTC-3 fixo, sem horário de
 // verão desde 2019) — usar new Date().setHours() usaria o fuso do servidor (UTC no
@@ -94,8 +93,7 @@ async function gerarResumo(name: string, phone: string, mensagens: Array<{ role:
     ? `${audiosCliente.length} áudio(s) — transcrições incluídas na conversa acima`
     : 'Nenhum';
 
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
+  const response = await criarMensagem('resposta', {
     max_tokens: 800,
     messages: [{
       role: 'user',

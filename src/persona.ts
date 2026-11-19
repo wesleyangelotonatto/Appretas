@@ -1,3 +1,4 @@
+import { criarMensagem } from './ia';
 // Persona Iara — Secretária do Dr. Wesley Veiga
 // Glossário jurídico OBRIGATÓRIO: nunca usar os termos proibidos
 
@@ -127,10 +128,7 @@ export async function detectarGeneroComIA(
   // Ainda neutro e há nome: pergunta à IA
   if (nome) {
     try {
-      const Anthropic = (await import('@anthropic-ai/sdk')).default;
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-      const r = await client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
+      const r = await criarMensagem('rapido', {
         max_tokens: 10,
         messages: [{
           role: 'user',

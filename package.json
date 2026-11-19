@@ -10,7 +10,7 @@
     "db:migrate": "node -e \"require('./dist/memory/migrate')\""
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.27.0",
+    "@anthropic-ai/sdk": "^1.11.0",
     "axios": "^1.7.0",
     "better-sqlite3": "^11.0.0",
     "cors": "^2.8.5",

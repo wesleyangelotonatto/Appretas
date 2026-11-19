@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { criarMensagem } from '../ia';
 import { io as getIo } from '../server';
 import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSession, saveMessage, isBlacklisted, getContactInstruction, cancelFollowUpsOnReply, getSetting, getHistory, jaEnviouTipo, registrarTipoEnviado, getAusenciaNotice, marcarAusenciaPendente, reivindicarAusencia, liberarAusencia, houveRespostaDeWesley, wesleyFoiOUltimoAResponder, temHistoricoAnterior } from '../memory/db';
 import { classifyContact, ClassificationType } from '../classifier/groq';
@@ -657,7 +657,6 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
 // de agora dá seguimento ao que já foi falado — repetir o pedido soa como se ela
 // não tivesse lido a conversa. Em caso de erro ou dúvida, devolve false e a
 // frase fixa sai, que é o comportamento que Wesley pediu como padrão.
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // O bloco de mensagens do cliente realmente pede uma resposta do escritório?
 // Nem toda mensagem pede: relato, desabafo, envio de documento e confirmações
@@ -697,8 +696,7 @@ O escritório precisa responder algo agora? Responda false quando for apenas rel
 
 APENAS JSON: {"precisaResponder": true ou false}`;
 
-    const r = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const r = await criarMensagem('rapido', {
       max_tokens: 50,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -727,8 +725,7 @@ O assunto já está claro o suficiente para o escritório entender o que o clien
 
 APENAS JSON: {"assuntoClaro": true ou false}`;
 
-    const r = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const r = await criarMensagem('rapido', {
       max_tokens: 50,
       messages: [{ role: 'user', content: prompt }],
     });
@@ -763,8 +760,7 @@ Responda: esta conversa JÁ trata de um caso específico e identificado (um proc
 
 APENAS JSON: {"jaTrataDeCaso": true ou false}`;
 
-    const resposta = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const resposta = await criarMensagem('rapido', {
       max_tokens: 50,
       messages: [{ role: 'user', content: prompt }],
     });
