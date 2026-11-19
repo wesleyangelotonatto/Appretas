@@ -600,6 +600,26 @@ async function executeCommand(parsed: any, io: any): Promise<any> {
 
 // ─── Envios perdidos ─────────────────────────────────────────────────────────
 
+// Teste dos modelos em produção: classifica e redige uma resposta de exemplo,
+// sem enviar nada a ninguém. Usado para conferir os modelos depois de uma troca.
+commandRouter.post('/teste-ia', async (_req, res) => {
+  const { classifyContact } = await import('../classifier/groq');
+  const { draftResponse, parseCommand } = await import('../responder/claude');
+  const { modeloDa } = await import('../ia');
+  const msg = 'Boa tarde, tive o Proagro negado na safra de soja e queria saber se vocês podem me ajudar';
+  const t0 = Date.now();
+  try {
+    const classificacao = await classifyContact({ phone: '0000000000000', found: false, messageText: msg });
+    const t1 = Date.now();
+    const resposta = await draftResponse(classificacao.type, msg, '(teste automático, sem dados do sistema)', 'M', []);
+    const t2 = Date.now();
+    const comando = await parseCommand('Responda: ok, vou verificar', '{"activePhone":"0000000000000"}');
+    res.json({ modelos: { rapido: modeloDa('rapido'), resposta: modeloDa('resposta') }, classificacao, ms_classificacao: t1 - t0, resposta, ms_resposta: t2 - t1, comando });
+  } catch (err: any) {
+    res.status(500).json({ erro: String(err?.message || err) });
+  }
+});
+
 // Custo estimado de IA por dia, função e modelo (últimos 30 dias)
 commandRouter.get('/custo-ia', async (_req, res) => {
   const { usoIAPorDia } = await import('../memory/db');
