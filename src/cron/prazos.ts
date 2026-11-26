@@ -72,7 +72,9 @@ function extractDueDateFromCard(card: any): Date | null {
   const desc = card.desc || card.name || '';
   const dateMatch = desc.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (dateMatch) {
-    return new Date(`${dateMatch[3]}-${dateMatch[2].padStart(2, '0')}-${dateMatch[1].padStart(2, '0')}`);
+    // Meio-dia em São Paulo (15h UTC): "AAAA-MM-DD" puro vira meia-noite UTC, que em
+    // São Paulo ainda é o dia anterior — o aviso saía um ou dois dias antes
+    return new Date(Date.UTC(parseInt(dateMatch[3], 10), parseInt(dateMatch[2], 10) - 1, parseInt(dateMatch[1], 10), 15, 0, 0));
   }
   return null;
 }

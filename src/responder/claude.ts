@@ -66,8 +66,16 @@ FORMATO OBRIGATÓRIO: UM parágrafo curto, no máximo 3 frases. Formal, direto e
 
   const block = response.content[0];
   const draft = block && block.type === 'text' ? block.text : '';
+  // Resposta cortada pelo limite de tamanho ou recusada pelo modelo não pode ir
+  // direto ao cliente: marca para o orquestrador mandar para aprovação
+  if (draft && response.stop_reason !== 'end_turn' && response.stop_reason !== 'stop_sequence') {
+    console.warn(`[draftResponse] resposta incompleta (${response.stop_reason}) — vai para aprovação`);
+    return MARCA_INCOMPLETO + aplicarGlossario(draft);
+  }
   return aplicarGlossario(draft);
 }
+
+export const MARCA_INCOMPLETO = '\u27E6incompleto\u27E7';
 
 export async function parseCommand(commandText: string, context: string): Promise<{
   action: string;

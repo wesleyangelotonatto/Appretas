@@ -44,6 +44,7 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
     const payload = req.body;
 
     res.json({ status: 'received' });
+    import('../cron/monitor').then(m => m.registrarEventoWebhook()).catch(() => {});
 
     if (!payload || payload.eventID !== 'messages') {
       console.log('[webhook] ignorado — eventID:', payload?.eventID);
@@ -109,7 +110,15 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
         return;
       }
 
-      if (fromMe) return; // não reage às próprias mensagens do Wesley no grupo
+      if (fromMe) {
+        // Registra a fala do Wesley (ou o eco da Iara) no grupo: sem isso a Iara não
+        // percebia que ele estava respondendo e continuava respondendo junto
+        const { saveMessage } = await import('../memory/db');
+        const { isEcoDeEnvioProprio } = await import('../responder/send');
+        const registro = body?.trim() || `[${messageType} enviado pelo Dr. Wesley]`;
+        if (!isEcoDeEnvioProprio(from, registro)) saveMessage(from, 'wesley', registro);
+        return;
+      }
 
       // Grupo ativado: processa a mensagem normalmente, usando o ID do grupo como "telefone"
       let base64rawGrupo: string | undefined = det.base64 || det.data || det.file || det.media || last.base64 || undefined;

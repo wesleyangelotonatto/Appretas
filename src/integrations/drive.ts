@@ -48,11 +48,14 @@ async function findOrCreateFolder(name: string, parentId: string): Promise<strin
   return created.data.id!;
 }
 
-export async function saveConversationSummary(phone: string, name: string, summary: string): Promise<void> {
+export async function saveConversationSummary(phone: string, name: string, summary: string, dataStr?: string): Promise<void> {
   try {
     const drive = getDrive();
     const contactFolder = await findOrCreateFolder(name || phone, ROOT_FOLDER_ID());
-    const today = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+    // Data do dia resumido (AAAA-MM-DD → DD-MM-AAAA), sempre no fuso de São Paulo
+    const today = dataStr
+      ? dataStr.split('-').reverse().join('-')
+      : new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }).replace(/\//g, '-');
     const fileName = `Resumo_${today}.txt`;
 
     const content = [
@@ -110,5 +113,26 @@ export async function saveDocument(phone: string, name: string, fileName: string
   } catch (err) {
     console.error('[drive] erro ao salvar documento:', err);
     return '';
+  }
+}
+
+// Envia um arquivo de backup para a pasta "_Backups Iara" dentro da pasta raiz.
+// Fica fora das pastas de clientes; mantém só os últimos N arquivos.
+export async function enviarBackupDrive(nomeArquivo: string, caminhoLocal: string, manter = 30): Promise<void> {
+  const fs = await import('fs');
+  const drive = getDrive();
+  const pasta = await findOrCreateFolder('_Backups Iara', ROOT_FOLDER_ID());
+  await drive.files.create({
+    requestBody: { name: nomeArquivo, parents: [pasta] },
+    media: { mimeType: 'application/gzip', body: fs.createReadStream(caminhoLocal) },
+    fields: 'id',
+  });
+  const lista = await drive.files.list({
+    q: `'${escapeDriveQueryValue(pasta)}' in parents and trashed = false`,
+    orderBy: 'createdTime desc', fields: 'files(id,name)', pageSize: 200,
+  });
+  const antigos = (lista.data.files || []).slice(manter);
+  for (const f of antigos) {
+    if (f.id) await drive.files.delete({ fileId: f.id }).catch(() => {});
   }
 }

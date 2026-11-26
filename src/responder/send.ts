@@ -166,8 +166,10 @@ export async function processarFilaEnvios(): Promise<void> {
     const lote = enviosParaTentar(20);
     for (const envio of lote) {
       try {
-        await postarTexto(envio.phone, envio.corpo);
+        // Registra antes de postar: o eco do WhatsApp pode chegar antes da resposta
+        // HTTP e, sem o registro, seria gravado como fala do Wesley
         registrarEnvioProprio(envio.phone, envio.corpo);
+        await postarTexto(envio.phone, envio.corpo);
         atualizarEnvioFila(envio.id, { status: 'enviado', erro: null });
         console.log(`[fila] #${envio.id} reenviado para ${envio.phone} na tentativa ${envio.tentativas + 1}`);
       } catch (err: any) {
@@ -198,8 +200,8 @@ export async function processarFilaEnvios(): Promise<void> {
 export async function reenviarAgora(envio: { id: number; phone: string; corpo: string }): Promise<boolean> {
   if (sistemaPausado() || modoCalibragem()) return false;
   try {
-    await postarTexto(envio.phone, envio.corpo);
     registrarEnvioProprio(envio.phone, envio.corpo);
+    await postarTexto(envio.phone, envio.corpo);
     atualizarEnvioFila(envio.id, { status: 'enviado', erro: null });
     return true;
   } catch (err: any) {

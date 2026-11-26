@@ -23,9 +23,14 @@ export async function cronAusenciaPendentes(): Promise<void> {
       // represado perdeu o sentido e fica só para o dia em que ele não atender
       if (houveRespostaDeWesley(minutosAtividade, phone)) {
         console.log(`[cron-ausencia] suprimido — Wesley já respondeu ${phone}`);
+        marcarAusenciaEnviada(phone, hojeStr); // limpa a pendência para não sair fora de contexto amanhã
         continue;
       }
-      await sendMessage(phone, MSG_FORA_HORARIO);
+      const r = await sendMessage(phone, MSG_FORA_HORARIO);
+      if (r.status !== 'enviado' && r.status !== 'na_fila') {
+        console.log(`[cron-ausencia] não saiu (${r.status}) — ${phone} continua pendente`);
+        continue;
+      }
       saveMessage(phone, 'iara', MSG_FORA_HORARIO);
       io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
       marcarAusenciaEnviada(phone, hojeStr);

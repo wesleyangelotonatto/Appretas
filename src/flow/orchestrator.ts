@@ -4,7 +4,7 @@ import { acumularNaJanela, janelasVencidas, removerJanela, getSession, upsertSes
 import { classifyContact, ClassificationType } from '../classifier/groq';
 import { lookupSheets } from '../lookup/sheets';
 import { lookupTrello } from '../lookup/trello';
-import { draftResponse } from '../responder/claude';
+import { draftResponse, MARCA_INCOMPLETO } from '../responder/claude';
 import { sendMessage, createNote, sistemaPausado, modoCalibragem } from '../responder/send';
 import { savePendingApproval } from '../memory/db';
 import { consultarDjen } from '../integrations/djen';
@@ -300,6 +300,18 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     const session = getSession(phone);
     const calibrando = modoCalibragem();
 
+    // A janela de agrupamento pode durar 30-60 min: nesse meio-tempo o Wesley pode
+    // ter assumido ou pausado o contato, ou pausado a secretária inteira. Reconfere
+    // agora, no momento de responder, e não só quando a mensagem chegou.
+    if (session?.status === 'takeover' || session?.status === 'pausado') {
+      console.log(`[orchestrator] ${phone} assumido/pausado durante a janela — nenhuma resposta`);
+      return;
+    }
+    if (sistemaPausado() && !calibrando) {
+      console.log(`[orchestrator] secretária pausada durante a janela — nenhuma resposta para ${phone}`);
+      return;
+    }
+
     // Verifica se Wesley é o dono desta conversa antes de qualquer ação:
     // - Se sua última mensagem nessa conversa é mais recente que a da Iara → conversa é dele
     // - Se ele respondeu este contato há menos de MINUTOS_ATIVIDADE_WESLEY → está atendendo ele
@@ -350,9 +362,12 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // 6. Modo ausência (Wesley em férias / feriado)
     const ausenciaMsg = getSetting('ausencia_msg');
     if (ausenciaMsg) {
-      await sendMessage(phone, ausenciaMsg);
-      saveMessage(phone, 'iara', ausenciaMsg);
-      io?.emit('message', { phone, role: 'iara', body: ausenciaMsg, timestamp: Date.now() });
+      // No máximo uma vez por dia por contato: antes, cada bloco de mensagens
+      // do cliente recebia a mesma mensagem de férias de novo
+      if (!jaEnviouTipo(phone, 'ausencia_ferias', 24)) {
+        const enviado = await deliverOrQueue(phone, ausenciaMsg, 'ausência / férias', io, waName);
+        if (enviado) registrarTipoEnviado(phone, 'ausencia_ferias');
+      }
       return;
     }
 
@@ -368,9 +383,13 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
           // sendo processada ao mesmo tempo, só uma delas ganha o direito de enviar
           if (reivindicarAusencia(phone, hojeStr)) {
             try {
-              await sendMessage(phone, MSG_FORA_HORARIO);
-              saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-              io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+              const r = await sendMessage(phone, MSG_FORA_HORARIO);
+              if (saiu(r)) {
+                saveMessage(phone, 'iara', MSG_FORA_HORARIO);
+                io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+              } else {
+                liberarAusencia(phone); // não saiu (pausa/calibragem): não conta como enviado
+              }
             } catch (err) {
               liberarAusencia(phone);
               throw err;
@@ -389,9 +408,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     const isUrgent = /(?<![\p{L}])(urgente|urgência|preso|presa|mandado|busca e apreensão|acidente|socorro|emergência)(?![\p{L}])/iu.test(textBody);
     if (isUrgent) {
       io?.emit('urgent_alert', { phone, body: textBody, timestamp: Date.now() });
-      await sendMessage(phone, MSG_URGENCIA_AGUARDAR);
-      saveMessage(phone, 'iara', MSG_URGENCIA_AGUARDAR);
-      io?.emit('message', { phone, role: 'iara', body: MSG_URGENCIA_AGUARDAR, timestamp: Date.now() });
+      await deliverOrQueue(phone, MSG_URGENCIA_AGUARDAR, 'urgência', io, waName);
       return;
     }
 
@@ -441,11 +458,8 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // Menções contextuais ("paguei via pix", "enviei e-mail para ele", "o processo
     // foi por e-mail") NÃO devem acionar — o verbo/pronome precisa indicar pedido
     // direto ao escritório ("qual o seu pix", "me passa o email de vocês", etc.)
-    const pedidoPix = /\bpix\b/i.test(textBody) &&
-      /(?:qual\s+[eéè\s]*(o\s+)?(?:seu|o\s+)?pix|me\s+pass[ae].*\bpix\b|\bpix\b.*me\s+pass[ae]|chave\s+pix|pix\s+d[oa]\s+(?:senhor|dr|doutor|escritório)|como\s+(?:faço\s+)?(?:o\s+)?pagamento|para\s+(?:fazer|realizar|efetuar)\s+(?:o\s+)?pagamento)/i.test(textBody);
-    const pedidoEmail = !pedidoPix &&
-      /e-?mail/i.test(textBody) &&
-      /(?:qual\s+[eéè\s]*(o\s+)?(?:seu|o\s+)?e-?mail|me\s+pass[ae].*e-?mail|e-?mail.*me\s+pass[ae]|endere[cç]o\s+de\s+e-?mail|e-?mail\s+d[oa]\s+(?:senhor|dr|doutor|escritório)|qual\s+o\s+contato\s+(?:de\s+)?e-?mail|pode\s+me\s+(?:dar|pass[ae]|mand[ae]).*e-?mail|e-?mail.*(?:de\s+)?contato)/i.test(textBody);
+    const pedidoPix = PEDIDO_PIX.test(textBody);
+    const pedidoEmail = !pedidoPix && PEDIDO_EMAIL.test(textBody);
     if (pedidoPix || pedidoEmail) {
       await deliverOrQueue(phone, pedidoPix ? MSG_PIX : MSG_EMAIL, pedidoPix ? 'pedido_pix' : 'pedido_email', io, contact?.name);
       return;
@@ -609,6 +623,14 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
         }
     }
 
+    if (draft && draft.startsWith(MARCA_INCOMPLETO)) {
+      // Rascunho cortado ou recusado pelo modelo: nunca vai direto ao cliente
+      draft = draft.slice(MARCA_INCOMPLETO.length);
+      const id = savePendingApproval(phone, draft, `${context}\n[rascunho incompleto — revisar antes de enviar]`);
+      io?.emit('pending_approval', { id, phone, draft, context, timestamp: Date.now(), nome: contact?.name || session?.name || '', tipo_contato: session?.type || '' });
+      console.log(`[orchestrator] rascunho incompleto para ${phone} — enviado para aprovação`);
+      return;
+    }
     if (draft) {
       draft = aplicarGlossario(draft);
       // Re-checa Wesley logo antes de enviar: ele pode ter respondido enquanto a IA processava
@@ -625,7 +647,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
   }
 }
 
-async function deliverOrQueue(phone: string, draft: string, context: string, io: any, contactName?: string) {
+async function deliverOrQueue(phone: string, draft: string, context: string, io: any, contactName?: string): Promise<boolean> {
   // Em calibragem a resposta nunca é enviada: vai sempre para a fila de revisão,
   // onde Wesley edita e o resultado é gravado no banco de treinamento
   const modoTreino = process.env.MODO_TREINO === 'true' || modoCalibragem();
@@ -641,14 +663,44 @@ async function deliverOrQueue(phone: string, draft: string, context: string, io:
       tipo_contato: sessao?.type || '',
     });
     console.log(`[treino] resposta enfileirada para aprovação — ${phone}`);
+    return false;
   } else {
-    await sendMessage(phone, draft);
+    const r = await sendMessage(phone, draft);
+    // Só grava como fala da Iara o que saiu ou entrou na fila de reenvio: bloqueado
+    // (pausa/calibragem) ou duplicado nunca chegou ao cliente e, gravado, faria o
+    // painel mostrar uma mensagem inexistente e até silenciar a conversa por engano
+    if (!saiu(r)) {
+      console.log(`[orchestrator] envio para ${phone} não saiu (${r.status}) — não registrado`);
+      return false;
+    }
     saveMessage(phone, 'iara', draft);
     io?.emit('message', { phone, role: 'iara', body: draft, timestamp: Date.now() });
     // Só detecta agendamento em mensagens realmente enviadas (não em rascunhos de treino)
     detectAppointment(phone, draft, contactName, io).catch(() => {});
+    return true;
   }
 }
+
+function saiu(r: { status: string }): boolean {
+  return r.status === 'enviado' || r.status === 'na_fila';
+}
+
+// PIX e e-mail: só quando o cliente pede o dado diretamente ("qual seu pix",
+// "me passa o e-mail"…). A palavra sozinha ("paguei no pix", "mandei e-mail pro
+// banco", "golpe do pix") não dispara. Na dúvida, não dispara.
+const VERBO_PEDIR = String.raw`(?:me\s+)?(?:passa|passe|manda|mande|envia|envie|fala|fale|informa|informe|da|dá|de|dê)`;
+const PEDIDO_PIX = new RegExp(
+  String.raw`(?:qual\s+(?:[eé]\s+)?(?:a\s+|o\s+)?(?:sua\s+|seu\s+|teu\s+|tua\s+)?(?:chave\s+)?pix)` +
+  String.raw`|(?:${VERBO_PEDIR}\s+(?:a\s+|o\s+)?(?:sua\s+|seu\s+)?(?:chave\s+)?pix)` +
+  String.raw`|(?:(?:chave\s+)?pix\s+(?:de\s+voc[eê]s|do\s+escrit[oó]rio|do\s+(?:dr|doutor)\.?))` +
+  String.raw`|(?:(?:tem|t[eê]m|voc[eê]s?\s+tem)\s+(?:chave\s+)?pix\s*\?)`,
+  'i');
+const PEDIDO_EMAIL = new RegExp(
+  String.raw`(?:qual\s+(?:[eé]\s+)?(?:o\s+)?(?:seu\s+|teu\s+)?(?:endere[cç]o\s+de\s+)?e-?mail)` +
+  String.raw`|(?:${VERBO_PEDIR}\s+(?:o\s+)?(?:seu\s+)?(?:endere[cç]o\s+de\s+)?e-?mail)` +
+  String.raw`|(?:e-?mail\s+(?:de\s+voc[eê]s|do\s+escrit[oó]rio|do\s+(?:dr|doutor)\.?))` +
+  String.raw`|(?:pra\s+qual\s+e-?mail|para\s+qual\s+e-?mail)`,
+  'i');
 
 // Horário comercial real: seg-sex, 08:30-17:00 — define QUANDO o aviso de ausência é necessário
 // A conversa já está tratando de um caso concreto? Usado antes de mandar a frase

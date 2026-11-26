@@ -1,16 +1,25 @@
 import { getDueFollowUps, markFollowUpSent, getDueFollowUpsV2, rescheduleFollowUpV2, updateFollowUpV2Status, saveMessage } from '../memory/db';
 import { sendMessage } from '../responder/send';
+import { dentroDaJanelaComercial } from '../flow/janela';
+
+const saiu = (status: string) => status === 'enviado' || status === 'na_fila';
 
 export async function cronFollowUps(): Promise<void> {
+  // Follow-ups só saem em dias úteis, das 08h às 21h; fora disso ficam para a próxima janela
+  if (!dentroDaJanelaComercial()) return;
+
   // ─── Follow-ups legados (simples) ──────────────────────────────────────────
   const legacyDue = getDueFollowUps();
   for (const fu of legacyDue) {
     try {
-      await sendMessage(fu.phone, fu.message);
+      const r = await sendMessage(fu.phone, fu.message);
+      if (!saiu(r.status)) { console.log(`[cron-followup] legado não saiu (${r.status}) — ${fu.phone}`); continue; }
       markFollowUpSent(fu.id);
       console.log(`[cron-followup] legado enviado para ${fu.phone}`);
     } catch (err) {
-      console.error(`[cron-followup] erro legado ${fu.phone}:`, err);
+      // Erro definitivo (número inválido etc.): encerra para não tentar a cada hora para sempre
+      markFollowUpSent(fu.id);
+      console.error(`[cron-followup] erro definitivo legado ${fu.phone} — encerrado:`, err);
     }
   }
 
@@ -27,7 +36,8 @@ export async function cronFollowUps(): Promise<void> {
     }
 
     try {
-      await sendMessage(fu.phone, fu.message);
+      const r = await sendMessage(fu.phone, fu.message);
+      if (!saiu(r.status)) { console.log(`[cron-followup] v2 não saiu (${r.status}) — ${fu.phone}`); continue; }
       saveMessage(fu.phone, 'iara', fu.message);
       console.log(`[cron-followup] v2 enviado para ${fu.phone}`);
 
@@ -46,7 +56,9 @@ export async function cronFollowUps(): Promise<void> {
         updateFollowUpV2Status(fu.id, 'concluido');
       }
     } catch (err) {
-      console.error(`[cron-followup] erro v2 ${fu.phone}:`, err);
+      // Erro definitivo: pausa (aparece no painel) em vez de repetir a cada hora
+      updateFollowUpV2Status(fu.id, 'pausado');
+      console.error(`[cron-followup] erro definitivo v2 ${fu.phone} — pausado:`, err);
     }
   }
 }

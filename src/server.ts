@@ -12,7 +12,7 @@ import { cronAudiencias } from './cron/audiencias';
 import { cronPrazos } from './cron/prazos';
 import { cronFollowUps } from './cron/followups';
 import { cronNaoRespondidos } from './cron/naorespondidos';
-import { cronResumosDiarios, cronRelatorioWesley } from './cron/resumos';
+import { cronDiarioManha } from './cron/resumos';
 import { getResumosDoDia, getDatasComResumo, getDb } from './memory/db';
 import { cronAusenciaPendentes } from './cron/ausencia';
 
@@ -126,6 +126,14 @@ app.get('/api/situacao-atual', (_req, res) => {
   }
 });
 
+// Estado do vigia para um monitor externo de disponibilidade (ex.: UptimeRobot):
+// responde 503 quando alguma verificação falhou
+app.get('/status', async (_req, res) => {
+  const { statusAtual } = await import('./cron/monitor');
+  const st = statusAtual();
+  res.status(st.ok ? 200 : 503).json(st);
+});
+
 app.get('/health', (_req, res) => res.json({
   status: 'ok',
   modoTreino: process.env.MODO_TREINO === 'true',
@@ -161,8 +169,9 @@ if (process.env.AVISOS_NAO_RESPONDIDOS === 'true') {
 } else {
   console.log('[iara] avisos de não-respondidos: DESLIGADOS (nenhum envio automático)');
 }
-cron.schedule('0 22 * * *', () => cronResumosDiarios(), { timezone: TZ }); // todo dia às 22h — resumos + Drive + nota Waspeed
-cron.schedule('0 21 * * *', () => cronRelatorioWesley(), { timezone: TZ }); // todo dia às 21h — relatório consolidado para Wesley
+// Todo dia às 06h: resumos de cada conversa do dia anterior (nota Waspeed + Drive + banco)
+// e, em seguida, o relatório consolidado para o Wesley — ordem garantida na mesma rotina
+cron.schedule('0 6 * * *', () => { cronDiarioManha().catch(err => console.error('[cron-manha] erro:', err)); }, { timezone: TZ });
 cron.schedule('0 7 * * *', () => cronAusenciaPendentes(), { timezone: TZ }); // todo dia às 07h — entrega avisos de ausência pendentes
 // A cada minuto: responde as conversas cuja janela de agrupamento venceu. É o
 // que torna a janela resistente a reinício — ao subir, a primeira passagem
@@ -179,6 +188,16 @@ setInterval(() => {
     .then(m => { m.expirarConfirmacoesSemEco(); return m.processarFilaEnvios(); })
     .catch(err => console.error('[fila] erro na verificação periódica:', err));
 }, 60 * 1000);
+
+// 03h: backup diário do banco, com teste de restauração e cópia no Drive
+cron.schedule('0 3 * * *', () => {
+  import('./cron/backup').then(m => m.executarBackup()).catch(err => console.error('[backup] erro:', err));
+}, { timezone: TZ });
+
+// A cada 10 min: vigia (Waspeed, recebimento de mensagens, CRM)
+cron.schedule('*/10 * * * *', () => {
+  import('./cron/monitor').then(m => m.executarMonitor()).catch(err => console.error('[monitor] erro:', err));
+}, { timezone: TZ });
 
 cron.schedule('30 3 * * *', async () => {                                    // todo dia às 03h30 — limpa IDs de eventos antigos
   const { limparEventosAntigos } = await import('./memory/db');

@@ -36,6 +36,10 @@ function ajustesDoModelo(modelo: string): Record<string, unknown> {
   return {}; // modelos 4.x: comportamento antigo, sem raciocínio
 }
 
+// Duração do cache da parte fixa das instruções: 1 hora por padrão (decisão de 26/11).
+// A gravação de 1 h custa 2x; cada leitura dentro da hora custa 10%.
+const CACHE_TTL: '5m' | '1h' = process.env.CACHE_TTL === '5m' ? '5m' : '1h';
+
 interface Pedido {
   max_tokens: number;
   system?: string;
@@ -48,7 +52,7 @@ export async function criarMensagem(funcao: FuncaoIA, pedido: Pedido): Promise<A
   const modelo = modeloDa(funcao);
   const system = pedido.system
     ? (pedido.cacheSystem
-        ? [{ type: 'text' as const, text: pedido.system, cache_control: { type: 'ephemeral' as const } }]
+        ? [{ type: 'text' as const, text: pedido.system, cache_control: { type: 'ephemeral' as const, ttl: CACHE_TTL } }]
         : pedido.system)
     : undefined;
 
@@ -106,5 +110,6 @@ export function custoEstimado(modelo: string, entrada: number, saida: number, ca
   const p = PRECOS.find(([re]) => re.test(modelo));
   if (!p) return 0;
   const [, pe, ps] = p;
-  return (entrada * pe + cacheLeitura * pe * 0.1 + cacheEscrita * pe * 1.25 + saida * ps) / 1e6;
+  const fatorEscrita = CACHE_TTL === '1h' ? 2 : 1.25;
+  return (entrada * pe + cacheLeitura * pe * 0.1 + cacheEscrita * pe * fatorEscrita + saida * ps) / 1e6;
 }

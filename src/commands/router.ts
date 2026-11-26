@@ -107,8 +107,9 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
 // POST /command/resumos — dispara resumos diários manualmente
 commandRouter.post('/resumos', async (_req, res) => {
   try {
-    const { cronResumosDiarios } = await import('../cron/resumos');
-    cronResumosDiarios().catch(err => console.error('[resumos] erro:', err));
+    // Manual: refaz os resumos e o relatório do dia anterior (mesma rotina das 06h)
+    const { cronDiarioManha } = await import('../cron/resumos');
+    cronDiarioManha().catch(err => console.error('[resumos] erro:', err));
     res.json({ ok: true, message: 'Geração de resumos iniciada' });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -618,6 +619,16 @@ commandRouter.post('/teste-ia', async (_req, res) => {
   } catch (err: any) {
     res.status(500).json({ erro: String(err?.message || err) });
   }
+});
+
+// Backup manual e estado do vigia (botões no painel)
+commandRouter.post('/backup', async (_req, res) => {
+  const { executarBackup } = await import('../cron/backup');
+  res.json(await executarBackup());
+});
+commandRouter.post('/monitor', async (_req, res) => {
+  const { executarMonitor } = await import('../cron/monitor');
+  res.json(await executarMonitor());
 });
 
 // Custo estimado de IA por dia, função e modelo (últimos 30 dias)
