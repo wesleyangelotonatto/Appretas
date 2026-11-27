@@ -130,16 +130,16 @@
 <header>
   <div class="status-dot" id="conn-dot" style="background:var(--red)"></div>
   <h1>Iara — Secretária Virtual</h1>
-  <span id="mode-badge" class="mode-badge" style="display:none">MODO TREINO</span>
-  <button id="btn-secretaria" onclick="toggleSecretaria()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--green);background:#0a2d10;color:var(--green);cursor:pointer;">Secretária: Ativa</button>
-  <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
-  <button id="btn-groups" onclick="toggleGroupsModal()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #3498db;background:#0a1a2d;color:#3498db;cursor:pointer;">Grupos</button>
-  <button id="btn-avisos" onclick="abrirAvisos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--blue);background:#0a1d2d;color:var(--blue);cursor:pointer;">Audiências/Prazos (<span id="avisos-count">0</span>)</button>
-  <select id="sel-vendas" onchange="mudarVendas(this.value)" title="Função Vendas" style="margin-left:8px;padding:4px 6px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted)"><option value="desligada">Vendas: desligada</option><option value="treino">Vendas: treino</option><option value="ligada">Vendas: ligada</option></select> <a href="/vendas.html" style="font-size:11px;color:var(--text-muted)">placar</a>
-  <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Modo Treino: desligado</button>
-  <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
-  <button onclick="abrirRelatorios()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #9b59b6;background:#1a0a2d;color:#9b59b6;cursor:pointer;">Relatórios</button>
-  <button id="btn-perdidos" onclick="abrirPerdidos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Envios perdidos (<span id="perdidos-count">0</span>)</button>
+  <span id="mode-badge" class="mode-badge" style="display:none">CALIBRAGEM: NADA É ENVIADO</span>
+  <button id="btn-secretaria" onclick="toggleSecretaria()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--green);background:#0a2d10;color:var(--green);cursor:pointer;">Respostas da Iara: LIGADAS</button>
+  <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Aviso de férias/ausência</button>
+  <button id="btn-groups" onclick="toggleGroupsModal()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #3498db;background:#0a1a2d;color:#3498db;cursor:pointer;">Grupos que a Iara responde</button>
+  <button id="btn-avisos" onclick="abrirAvisos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--blue);background:#0a1d2d;color:var(--blue);cursor:pointer;">Avisos de audiência e prazo (<span id="avisos-count">0</span>)</button>
+  <select id="sel-vendas" onchange="mudarVendas(this.value)" title="Função Vendas: desligada = a Iara não trata leads pelo funil; treino = redige e espera sua aprovação; ligada = responde os leads sozinha" style="margin-left:8px;padding:4px 6px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted)"><option value="desligada">Vendas: desligada</option><option value="treino">Vendas: treino</option><option value="ligada">Vendas: ligada</option></select> <a href="/vendas.html" style="font-size:11px;color:var(--text-muted)">placar do treino</a> <a href="/followup.html" style="font-size:11px;color:var(--text-muted)">follow-up automático</a> <a href="/manual.html" style="font-size:11px;color:var(--text-muted)">manual</a>
+  <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Calibragem (nada sai): desligada</button>
+  <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Respostas para aprovar (<span id="all-approvals-count">0</span>)</button>
+  <button onclick="abrirRelatorios()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #9b59b6;background:#1a0a2d;color:#9b59b6;cursor:pointer;">Relatórios diários</button>
+  <button id="btn-perdidos" onclick="abrirPerdidos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Mensagens que não saíram (<span id="perdidos-count">0</span>)</button>
   <div class="integration-status">
     <div class="int-item"><div class="int-dot ok" id="dot-waspeed"></div> Waspeed</div>
     <div class="int-item"><div class="int-dot ok" id="dot-trello"></div> Trello</div>
@@ -164,7 +164,7 @@
       <label style="font-size:12px;color:var(--text-muted);">Próximos</label>
       <input id="avisos-dias" type="number" value="15" min="1" max="90" style="width:64px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:6px;">
       <label style="font-size:12px;color:var(--text-muted);">dias</label>
-      <button class="btn btn-followup" onclick="gerarAvisos()" id="btn-gerar-avisos">Buscar no Trello</button>
+      <button class="btn btn-followup" onclick="gerarAvisos()" id="btn-gerar-avisos">Buscar audiências e prazos no Trello</button>
       <button class="btn" style="background:var(--surface2);border:1px solid var(--red);color:var(--red);font-size:11px;" onclick="descartarTodosAvisos()">Descartar todos</button>
       <span id="avisos-status" style="font-size:12px;color:var(--text-muted);"></span>
     </div>
@@ -239,10 +239,10 @@
         <p id="chat-phone" style="color:var(--text-muted)"></p>
       </div>
       <div class="chat-actions" id="chat-actions" style="display:none">
-        <button class="btn btn-pause" onclick="pauseContact()">Pausar</button>
-        <button class="btn btn-doc" onclick="openDocModal()">Documento</button>
-        <button class="btn btn-followup" onclick="openFollowUpModal()">Follow-up</button>
-        <button class="btn btn-takeover" id="btn-takeover" onclick="toggleTakeover()">Assumir</button>
+        <button class="btn btn-pause" onclick="pauseContact()">Pausar a Iara neste contato</button>
+        <button class="btn btn-doc" onclick="openDocModal()">Enviar documento</button>
+        <button class="btn btn-followup" onclick="openFollowUpModal()">Agendar mensagem de retorno</button>
+        <button class="btn btn-takeover" id="btn-takeover" onclick="toggleTakeover()">Eu respondo (a Iara para)</button>
       </div>
     </div>
 
@@ -250,7 +250,7 @@
       <h4 style="display:flex;align-items:center;justify-content:space-between;">
         Aguardando aprovacao antes de enviar
         <span style="display:flex;gap:6px;">
-          <button onclick="verTodosRascunhos()" style="font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer;">Ver todos</button>
+          <button onclick="verTodosRascunhos()" style="font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--border);color:var(--text-muted);border-radius:4px;cursor:pointer;">Ver todas as respostas para aprovar</button>
           <button onclick="descartarTodosRascunhos()" style="font-size:10px;padding:2px 8px;background:var(--surface2);border:1px solid var(--red);color:var(--red);border-radius:4px;cursor:pointer;">Descartar todos</button>
         </span>
       </h4>
@@ -263,7 +263,7 @@
 
     <div class="takeover-bar" id="takeover-bar">
       <input type="text" id="takeover-input" placeholder="Digite e pressione Enter para enviar como Wesley..." />
-      <button class="btn btn-handback" onclick="handBack()">Devolver à IA</button>
+      <button class="btn btn-handback" onclick="handBack()">Devolver à Iara</button>
     </div>
   </div>
 
@@ -286,7 +286,7 @@
         <span class="cmd-chip" onclick="setCmd('direciona ')">direciona</span>
         <span class="cmd-chip" onclick="setCmd('salva nota: ')">salva nota</span>
       </div>
-      <button class="cmd-send" onclick="sendCommand()">Executar Comando</button>
+      <button class="cmd-send" onclick="sendCommand()">Pedir à Iara</button>
     </div>
   </div>
 
@@ -346,7 +346,7 @@
 
     <div class="modal-actions">
       <button class="btn btn-pause" onclick="closeFollowUpModal()">Fechar</button>
-      <button class="btn btn-followup" onclick="createFollowUp()">Criar Follow-up</button>
+      <button class="btn btn-followup" onclick="createFollowUp()">Agendar mensagem</button>
     </div>
   </div>
 </div>
@@ -464,7 +464,7 @@
     document.getElementById('chat-name').textContent = nomeENumero(conv.name, activePhone);
     document.getElementById('chat-phone').textContent = activePhone + (conv.processes?.length ? ` • Processos: ${conv.processes.join(', ')}` : '');
     const btn = document.getElementById('btn-takeover');
-    btn.textContent = conv.status === 'takeover' ? 'Devolver a IA' : 'Assumir';
+    btn.textContent = conv.status === 'takeover' ? 'Devolver à Iara' : 'Eu respondo (a Iara para)';
     btn.className = 'btn ' + (conv.status === 'takeover' ? 'btn-handback' : 'btn-takeover');
     document.getElementById('takeover-bar').className = 'takeover-bar' + (conv.status === 'takeover' ? ' active' : '');
   }
@@ -530,9 +530,9 @@
         <div class="draft-text" id="draft-text-${a.id}">${escHtml(a.draft)}</div>
         <textarea class="edit-area" id="edit-${a.id}">${escHtml(a.draft)}</textarea>
         <div class="approval-actions">
-          <button class="btn btn-approve" onclick="approveResponse(${a.id})">Aprovar e Enviar</button>
+          <button class="btn btn-approve" onclick="approveResponse(${a.id})">Aprovar e enviar</button>
           <button class="btn btn-pause" onclick="showEdit(${a.id})">Editar</button>
-          <button class="btn btn-approve" onclick="approveEdited(${a.id})" id="send-edited-${a.id}" style="display:none">Enviar Editado</button>
+          <button class="btn btn-approve" onclick="approveEdited(${a.id})" id="send-edited-${a.id}" style="display:none">Enviar com a minha edição</button>
           <button class="btn btn-danger" onclick="discardApproval(${a.id})">Descartar</button>
         </div>
       </div>
@@ -812,10 +812,10 @@
     const btn = document.getElementById('btn-ausencia');
     if (ausenciaAtiva) {
       btn.style.background = '#c0392b'; btn.style.borderColor = '#c0392b'; btn.style.color = '#fff';
-      btn.textContent = 'AUSENCIA ATIVA';
+      btn.textContent = 'Aviso de férias/ausência: LIGADO';
     } else {
       btn.style.background = '#2d1a00'; btn.style.borderColor = '#e67e22'; btn.style.color = '#e67e22';
-      btn.textContent = 'Ausencia';
+      btn.textContent = 'Aviso de férias/ausência';
     }
   }
 
@@ -858,10 +858,10 @@
     const btn = document.getElementById('btn-secretaria');
     if (secretariaAtiva) {
       btn.style.background = '#0a2d10'; btn.style.borderColor = 'var(--green)'; btn.style.color = 'var(--green)';
-      btn.textContent = 'Secretária: Ativa';
+      btn.textContent = 'Respostas da Iara: LIGADAS';
     } else {
       btn.style.background = '#c0392b'; btn.style.borderColor = '#c0392b'; btn.style.color = '#fff';
-      btn.textContent = 'Secretária: PAUSADA';
+      btn.textContent = 'Respostas da Iara: PAUSADAS';
     }
   }
 
@@ -982,7 +982,7 @@
         '<div style="display:flex;gap:8px;margin:6px 0;">' +
           '<input id="partes-'+a.id+'" value="'+escHtml(a.partes||'')+'" placeholder="Partes (Fulano x Beltrano)" style="flex:2;'+inputStyle+'">' +
           '<input id="juizo-'+a.id+'" value="'+escHtml(a.juizo||'')+'" placeholder="Juízo / vara" style="flex:2;'+inputStyle+'">' +
-          '<button class="btn" style="background:var(--surface2);font-size:11px;white-space:nowrap;" onclick="salvarContatoAviso('+a.id+')">Salvar dados</button>' +
+          '<button class="btn" style="background:var(--surface2);font-size:11px;white-space:nowrap;" onclick="salvarContatoAviso('+a.id+')">Salvar dados do aviso</button>' +
         '</div>' +
         alerta +
         '<div style="margin:6px 0;">'+opcoes+'</div>' +
@@ -1115,12 +1115,12 @@
     const badge = document.getElementById('mode-badge');
     if (calibragemAtiva) {
       btn.style.background = '#2d1a0a'; btn.style.borderColor = 'var(--orange)'; btn.style.color = 'var(--orange)';
-      btn.textContent = 'MODO TREINO' + (total ? ' (' + total + ')' : '');
+      btn.textContent = 'Calibragem (nada sai): LIGADA' + (total ? ' (' + total + ' guardadas)' : '');
       faixa.style.display = 'block';
       if (badge) badge.style.display = '';
     } else {
       btn.style.background = 'var(--surface2)'; btn.style.borderColor = 'var(--border)'; btn.style.color = 'var(--text-muted)';
-      btn.textContent = 'Modo Treino: desligado';
+      btn.textContent = 'Calibragem (nada sai): desligada';
       faixa.style.display = 'none';
       if (badge) badge.style.display = 'none';
     }
@@ -1136,12 +1136,12 @@
 
   async function toggleCalibragem() {
     if (calibragemAtiva) {
-      const ok = await modalConfirm('Desligar o Modo Treino?', 'A partir daí as respostas voltam a ser enviadas diretamente aos clientes, sem aprovação.');
+      const ok = await modalConfirm('Desligar a calibragem?', 'A partir daí as respostas voltam a ser enviadas diretamente aos clientes, sem aprovação.');
       if (!ok) return;
       await fetch('/command/calibragem/desativar', {method:'POST'});
       calibragemAtiva = false;
     } else {
-      const ok = await modalConfirm('Ligar o Modo Treino?', 'Nenhuma mensagem chegará a qualquer cliente. As respostas ficam guardadas só para treinamento.\n\nResumos diários, Drive e notas continuam funcionando normalmente.');
+      const ok = await modalConfirm('Ligar a calibragem?', 'Nenhuma mensagem chegará a qualquer cliente. As respostas ficam guardadas só para treinamento.\n\nResumos diários, Drive e notas continuam funcionando normalmente.');
       if (!ok) return;
       await fetch('/command/calibragem/ativar', {method:'POST'});
       calibragemAtiva = true;

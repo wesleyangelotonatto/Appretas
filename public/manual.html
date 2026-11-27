@@ -1,0 +1,78 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Manual da Iara</title>
+<style>
+:root{--bg:#0f1419;--card:#1a2129;--borda:#2d3748;--txt:#e6e6e6;--mut:#a0aec0;--az:#63b3ed}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;font-size:15px;line-height:1.55}
+header{padding:12px 16px;border-bottom:1px solid var(--borda);display:flex;gap:12px;align-items:center;flex-wrap:wrap}header h1{font-size:19px;margin:0}
+a{color:var(--az);text-decoration:none}main{max-width:860px;margin:0 auto;padding:16px}
+nav.indice{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:12px 16px;margin-bottom:16px}
+nav.indice a{display:inline-block;margin:3px 12px 3px 0}
+section{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:14px 18px;margin-bottom:14px}
+h2{font-size:17px;margin:0 0 8px}dt{font-weight:700;margin-top:10px}dd{margin:2px 0 0 0;color:#d2d6dc}.mut{color:var(--mut);font-size:13px}
+input{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--borda);border-radius:6px;padding:8px;font:inherit;margin-bottom:12px}
+</style></head><body>
+<header><a href="/">← Painel da Iara</a><h1>Manual da Iara</h1></header>
+<main>
+<input id="busca" placeholder="Procurar no manual (ex.: pausar, rascunho, follow-up)" oninput="filtrar(this.value)">
+<nav class="indice"><a href="#ideia">Em uma frase</a><a href="#topo">Botões do topo</a><a href="#conversa">Dentro de uma conversa</a><a href="#aprovar">Respostas para aprovar</a><a href="#vendas">Função Vendas</a><a href="#followup">Follow-up automático</a><a href="#avisos">Avisos de audiência e prazo</a><a href="#login">Login e senha</a><a href="#seguranca">O que a Iara nunca faz</a></nav>
+
+<section id="ideia"><h2>Em uma frase</h2>
+<p>A Iara é a secretária virtual do escritório no WhatsApp: responde clientes e leads, guarda documentos no Drive, avisa de prazos e audiências e prepara tudo para o senhor decidir. Tudo o que ela faz aparece neste painel e no CRM.</p></section>
+
+<section id="topo"><h2>Botões do topo</h2><dl>
+<dt>Bolinhas Waspeed · Trello · DJEN · Drive</dt><dd>Verde = funcionando. Vermelha = aquela ligação caiu (o senhor também recebe aviso no WhatsApp).</dd>
+<dt>Respostas da Iara: LIGADAS / PAUSADAS</dt><dd>A chave geral. Pausada, a Iara não manda nada a nenhum cliente (ela continua registrando conversas, documentos e resumos). Avisos internos para o senhor continuam chegando.</dd>
+<dt>Aviso de férias/ausência</dt><dd>Liga uma mensagem automática de férias ou ausência para quem escrever (no máximo uma vez por dia para cada contato).</dd>
+<dt>Grupos que a Iara responde</dt><dd>Escolhe em quais grupos de WhatsApp a Iara pode responder. Os demais ela só registra.</dd>
+<dt>Avisos de audiência e prazo (número)</dt><dd>Avisos aos clientes tirados do Trello e do DJEN. Nada sai sem o senhor confirmar a data.</dd>
+<dt>Vendas: desligada / treino / ligada</dt><dd>Como a Iara trata os <b>leads</b> (veja "Função Vendas").</dd>
+<dt>Calibragem (nada sai)</dt><dd>Modo de teste geral: as respostas são redigidas mas <b>nenhuma é enviada</b>; ficam guardadas para treinar a Iara.</dd>
+<dt>Respostas para aprovar (número)</dt><dd>Mensagens que a Iara redigiu e esperam o senhor: aprovar, editar ou descartar.</dd>
+<dt>Relatórios diários</dt><dd>O resumo do dia anterior (sai às 6h no seu WhatsApp) e os anteriores.</dd>
+<dt>Mensagens que não saíram (número)</dt><dd>Envios que falharam (ex.: Waspeed fora do ar). Dá para reenviar uma a uma ou todas.</dd>
+<dt>placar do treino · follow-up automático · manual</dt><dd>Atalhos para o placar da função Vendas, para o follow-up e para este manual.</dd>
+<dt>Sair</dt><dd>Encerra a sua sessão no painel (ela também expira sozinha em 12 horas).</dd>
+</dl></section>
+
+<section id="conversa"><h2>Dentro de uma conversa</h2><p class="mut">Clique num contato na lista da esquerda. O nome aparece junto do número; quando a pessoa diz o nome na conversa ("meu nome é…"), a Iara guarda.</p><dl>
+<dt>Pausar a Iara neste contato</dt><dd>A Iara para de responder só esta pessoa. As mensagens continuam sendo registradas.</dd>
+<dt>Enviar documento</dt><dd>Manda um arquivo para o contato pelo WhatsApp.</dd>
+<dt>Agendar mensagem de retorno</dt><dd>Programa uma mensagem para este contato em uma data, uma vez ou repetindo (cada 1, 2, 3, 7 ou 14 dias), até ele responder ou o senhor parar.</dd>
+<dt>Eu respondo (a Iara para)</dt><dd>O senhor assume a conversa; a Iara fica quieta com essa pessoa até o senhor clicar em <b>Devolver à Iara</b>.</dd>
+<dt>Pedir à Iara</dt><dd>Campo para dar uma ordem em português (ex.: "mande para ele a lista de documentos do Proagro").</dd>
+</dl></section>
+
+<section id="aprovar"><h2>Respostas para aprovar</h2><dl>
+<dt>Aprovar e enviar</dt><dd>Manda a mensagem como está (se a Iara estiver pausada, nada sai).</dd>
+<dt>Editar → Enviar com a minha edição</dt><dd>Corrige e manda. A sua correção ensina a Iara.</dd>
+<dt>Descartar</dt><dd>Joga fora. Nos rascunhos de Vendas, a Iara pergunta o motivo, para aprender.</dd>
+<dt>Faixa roxa "Vendas (treino)"</dt><dd>Mostra o produto, a parte do roteiro usada, a etapa sugerida (só vale se aprovar), o que o <b>revisor</b> achou e as frases obrigatórias que faltam.</dd>
+</dl></section>
+
+<section id="vendas"><h2>Função Vendas</h2><dl>
+<dt>Quem é lead</dt><dd>Quem veio de anúncio, quem está numa etapa do funil (01 a 13, menos 11 Fechado) ou é contato novo com caso novo. Os demais seguem com a Secretária.</dd>
+<dt>Desligada</dt><dd>A Iara não conduz o funil; leads recebem o atendimento comum.</dd>
+<dt>Treino (recomendado agora)</dt><dd>A Iara redige seguindo o roteiro do produto (configurado no CRM) e a ficha do lead, mas <b>nada vai ao lead</b>: tudo cai em "Respostas para aprovar".</dd>
+<dt>Ligada</dt><dd>A Iara responde os leads sozinha. Rascunhos que o revisor reprovou continuam indo para aprovação.</dd>
+<dt>Revisor</dt><dd>Uma segunda IA confere cada rascunho: não prometer resultado, não dar parecer, não inventar valores, não negar ser assistente virtual, não pressionar, honorários só da tabela.</dd>
+<dt>Enviar provas</dt><dd>A Iara só <b>oferece</b> decisões de casos parecidos. Se o lead aceitar e o senhor aprovar, nasce a tarefa "Enviar provas ao lead" no CRM, para o senhor mandar.</dd>
+<dt>Placar do treino</dt><dd>Quantos rascunhos o senhor aprovou sem mexer, por produto e etapa. Referência para sair do treino: 90% sem edição em 50 rascunhos. Lá também dá para comparar o que a Iara diria com o que foi respondido em conversas antigas.</dd>
+</dl></section>
+
+<section id="followup"><h2>Follow-up automático</h2><dl>
+<dt>Para que serve</dt><dd>Retomar leads que pararam de responder, com frases prontas (as do plano), na etapa em que estão.</dd>
+<dt>Botão Ligar / Desligar</dt><dd>Separado da função Vendas. Começa <b>desligado</b>.</dd>
+<dt>Para quais etapas</dt><dd>Marque as etapas (01 Novo Lead, 04, 05, 08, 09, 10, 12). Só entram leads que conversaram nos últimos 30 dias (dá para mudar).</dd>
+<dt>Textos</dt><dd>Edite as frases e os dias. As lacunas {nome}, {produto}, {documento}, {ponto} e {data} a Iara completa com o que está na conversa; se não souber, a mensagem vai para sua aprovação em vez de sair.</dd>
+<dt>Cuidados automáticos</dt><dd>Só das 8h às 21h, no máximo 20 por hora, pelo menos 20 horas entre mensagens à mesma pessoa; se o lead responder, recomeça do zero; a pausa geral segura tudo. Depois da última mensagem sem resposta, sugere a etapa "13 Sem resposta".</dd>
+</dl></section>
+
+<section id="avisos"><h2>Avisos de audiência e prazo</h2><p>A Iara lê o Trello e o DJEN, monta o aviso ao cliente e espera o senhor escolher a data certa. Botões: <b>Confirmar e enviar</b>, <b>Editar</b>, <b>Refazer texto com a data escolhida</b>, <b>Descartar</b>, <b>Salvar dados do aviso</b>. Audiência de segunda-feira é avisada na sexta.</p></section>
+
+<section id="login"><h2>Login e senha</h2><p>O mesmo usuário e senha do CRM. Para trocar a senha: no CRM, em <b>Minha conta</b>. Esqueceu: um administrador redefine em <b>Gerenciar usuários → Redefinir senha</b>. A senha de emergência da Iara só funciona quando o CRM está fora do ar.</p></section>
+
+<section id="seguranca"><h2>O que a Iara nunca faz</h2><p>Não promete resultado nem prazo; não dá parecer jurídico; não inventa valores; não nega ser assistente virtual quando perguntada; não manda provas ou contatos de clientes (só o senhor); não manda documento de cliente para site de terceiros.</p></section>
+</main>
+<script>
+function filtrar(t){t=t.toLowerCase();document.querySelectorAll("section").forEach(function(s){s.style.display=!t||s.textContent.toLowerCase().indexOf(t)>=0?"":"none";});}
+</script></body></html>
