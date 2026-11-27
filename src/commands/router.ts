@@ -632,6 +632,12 @@ commandRouter.post('/monitor', async (_req, res) => {
 });
 
 // Custo estimado de IA por dia, função e modelo (últimos 30 dias)
+commandRouter.get('/crm-ficha/:phone', async (req, res) => {
+  const { fichaDoCRM } = await import('../integrations/crm');
+  const f = await fichaDoCRM(req.params.phone);
+  res.status(f ? 200 : 502).json(f ?? { erro: 'CRM não respondeu' });
+});
+
 commandRouter.get('/custo-ia', async (_req, res) => {
   const { usoIAPorDia } = await import('../memory/db');
   const { custoEstimado, modeloDa } = await import('../ia');
