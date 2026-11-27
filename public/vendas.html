@@ -1,0 +1,35 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Treino de Vendas</title>
+<style>
+:root{--bg:#0f1419;--card:#1a2129;--borda:#2d3748;--txt:#e6e6e6;--mut:#a0aec0;--az:#63b3ed;--vd:#68d391;--rx:#b794f4}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;font-size:14px}
+header{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--borda);flex-wrap:wrap}header h1{font-size:18px;margin:0}
+a{color:var(--az);text-decoration:none}.mut{color:var(--mut);font-size:12px}main{max-width:1100px;margin:0 auto;padding:16px}
+.bloco{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:14px;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:6px;border-bottom:1px solid var(--borda);vertical-align:top}th{color:var(--mut)}
+.par{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:800px){.par{grid-template-columns:1fr}}
+.cx{background:var(--bg);border:1px solid var(--borda);border-radius:8px;padding:8px;white-space:pre-wrap}
+button{background:#3182ce;color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer;font:inherit}
+</style></head><body>
+<header><a href="/">← Painel da Iara</a><h1>Treino da função Vendas</h1><span style="flex:1"></span><span class="mut" id="pos"></span></header>
+<main>
+<div class="bloco"><h3 style="margin-top:0">Placar</h3><div id="placar">Carregando…</div></div>
+<div class="bloco"><h3 style="margin-top:0">Conversas passadas: o que a Iara diria × o que foi respondido</h3>
+<p class="mut">Nada é enviado. Cada rodada usa IA (função não essencial, respeita o teto diário).</p>
+<button onclick="reprocessar()">Gerar mais 10 comparações</button> <span id="msg" class="mut"></span><div id="comp" style="margin-top:10px"></div></div>
+</main>
+<script>
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+async function j(u,b){var r=await fetch(u,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});if(r.status===401){location.href="/login";throw 0;}return r.json();}
+async function carregar(){
+  var v=await j("/command/vendas");document.getElementById("pos").textContent="Função Vendas: "+v.posicao;
+  var p=await j("/command/vendas/placar");
+  document.getElementById("placar").innerHTML='<div><b>'+p.taxaSemEdicao+'%</b> aprovados sem edição em '+p.total+' rascunho(s) · referência para sair do treino: '+esc(p.referencia)+'</div>'+
+   (p.porProdutoEtapa.length?'<table style="margin-top:8px"><tr><th>Produto</th><th>Etapa</th><th>Rascunhos</th><th>Sem edição</th><th>Editados</th><th>Descartados</th><th>Taxa</th></tr>'+p.porProdutoEtapa.map(function(g){return '<tr><td>'+esc(g.produto)+'</td><td>'+esc(g.etapa)+'</td><td>'+g.total+'</td><td>'+g.semEdicao+'</td><td>'+g.editados+'</td><td>'+g.descartados+'</td><td>'+g.taxaSemEdicao+'%</td></tr>';}).join("")+'</table>':'<div class="mut" style="margin-top:6px">Ainda sem rascunhos decididos.</div>');
+  var c=await j("/command/vendas/comparacoes");
+  document.getElementById("comp").innerHTML=c.comparacoes.length?c.comparacoes.map(function(x){return '<div style="border-bottom:1px solid var(--borda);padding:10px 0"><b>'+esc(x.nome||x.phone)+'</b> <span class="mut">'+esc(x.produto||"produto ?")+' · '+esc(x.regra||"")+(x.etapa_sugerida?' · etapa sugerida '+esc(x.etapa_sugerida):'')+'</span>'+
+   '<div class="mut" style="margin:6px 0">Lead: “'+esc(x.mensagem_cliente)+'”</div><div class="par"><div><div class="mut">Respondido ('+esc(x.quem_respondeu)+')</div><div class="cx">'+esc(x.resposta_real)+'</div></div><div><div class="mut" style="color:var(--rx)">Iara (Vendas)</div><div class="cx">'+esc(x.rascunho_iara)+'</div></div></div></div>';}).join(""):'<div class="mut">Nenhuma comparação ainda.</div>';
+}
+async function reprocessar(){var m=document.getElementById("msg");m.textContent="Gerando… (pode levar um minuto)";var r=await j("/command/vendas/reprocessar",{limite:10});m.textContent=r.gerados+" gerada(s), "+r.pulados+" sem ponto de comparação, "+r.erros+" erro(s).";carregar();}
+carregar();
+</script></body></html>

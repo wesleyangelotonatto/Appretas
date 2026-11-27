@@ -59,6 +59,10 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
   const { draft, phone } = req.body;
 
   if (draft === '__DISCARD__') {
+    // Descarte de rascunho de Vendas conta no placar, com o motivo
+    const orig = getPendingApprovals().find((a: any) => a.id === id);
+    const ctx = lerContextoVendas(orig?.context);
+    if (orig && ctx) salvarTreinamento({ phone: orig.phone, tipo: 'vendas_descartado', contexto: JSON.stringify({ ...ctx, motivoDescarte: String(req.body.motivo || '').slice(0, 300) || null }), textoOriginal: orig.draft, textoFinal: '' });
     deletePendingApproval(id);
     return res.json({ ok: true, discarded: true });
   }
@@ -70,6 +74,17 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
     if (original && original.draft !== draft) {
       saveCorrection(phone, original.draft, draft, original.context);
       console.log(`[correction] salva para ${phone} — original: "${original.draft.slice(0, 60)}..." → editado: "${draft.slice(0, 60)}..."`);
+    }
+
+    // Rascunho da função Vendas: registra no placar e, aprovado, a etapa sugerida passa a valer
+    // (no CRM; etapas de decisão 02/07/11 viram sugestão para o Wesley aprovar lá)
+    const ctxV = lerContextoVendas(original?.context);
+    if (original && ctxV) {
+      salvarTreinamento({ phone, tipo: 'vendas', contexto: original.context, textoOriginal: original.draft, textoFinal: draft });
+      if (ctxV.etapaSugerida && ctxV.etapaSugerida !== ctxV.etapaAtual) {
+        import('../integrations/crm').then(({ sugerirEtapa }) => sugerirEtapa(phone, ctxV.etapaSugerida, { observacao: 'Sugerido pela Iara (Vendas) ao aprovar o rascunho' + (ctxV.proximoPasso ? ': ' + ctxV.proximoPasso : '') }))
+          .catch(err => console.error('[vendas] etapa sugerida:', err));
+      }
     }
 
     // Em calibragem, aprovar NÃO envia: guarda no banco de treinamento o que a IA
@@ -645,6 +660,50 @@ commandRouter.get('/buscar', async (req, res) => {
   try {
     res.json(buscarConversas(q, { phone: req.query.phone ? String(req.query.phone) : undefined, desde: dia(req.query.de, false), ate: dia(req.query.ate, true), limite: Number(req.query.limite) || 30 }));
   } catch (err) { res.status(400).json({ erro: 'Busca inválida: ' + (err as Error).message }); }
+});
+
+function lerContextoVendas(ctx?: string | null): any {
+  try { const j = JSON.parse(ctx || ''); return j && j.funcao === 'vendas' ? j : null; } catch { return null; }
+}
+
+// Função Vendas: posição (desligada / treino / ligada) e placar do treino
+commandRouter.get('/vendas', async (_req, res) => {
+  const { posicaoVendas } = await import('../vendas/vendas');
+  const { getSetting } = await import('../memory/db');
+  res.json({ posicao: posicaoVendas(), desde: JSON.parse(getSetting('funcao_vendas_desde') || 'null') });
+});
+commandRouter.post('/vendas', async (req, res) => {
+  const p = String(req.body?.posicao || '');
+  if (!['desligada', 'treino', 'ligada'].includes(p)) return res.status(400).json({ erro: 'posição inválida' });
+  const { definirPosicaoVendas } = await import('../vendas/vendas');
+  definirPosicaoVendas(p as any, (req as any).usuario?.login || 'painel');
+  res.json({ ok: true, posicao: p });
+});
+commandRouter.post('/vendas/reprocessar', async (req, res) => {
+  const { reprocessarConversas } = await import('../vendas/vendas');
+  const limite = Math.min(30, Math.max(1, Number(req.body?.limite) || 10));
+  res.json(await reprocessarConversas(limite));
+});
+commandRouter.get('/vendas/comparacoes', async (_req, res) => {
+  const { listarComparacoes } = await import('../vendas/vendas');
+  res.json({ comparacoes: listarComparacoes(100) });
+});
+commandRouter.get('/vendas/placar', async (_req, res) => {
+  const { getDb } = await import('../memory/db');
+  const linhas = getDb().prepare("SELECT tipo, contexto, texto_original, texto_final FROM treinamento WHERE tipo IN ('vendas','vendas_descartado')").all() as any[];
+  const grupos: Record<string, { produto: string; etapa: string; total: number; semEdicao: number; editados: number; descartados: number }> = {};
+  for (const l of linhas) {
+    let c: any = {}; try { c = JSON.parse(l.contexto || '{}'); } catch { /* */ }
+    const k = (c.produto || 'sem produto') + '|' + (c.etapaAtual || '—');
+    const g = grupos[k] ||= { produto: c.produto || 'sem produto', etapa: c.etapaAtual || '—', total: 0, semEdicao: 0, editados: 0, descartados: 0 };
+    g.total++;
+    if (l.tipo === 'vendas_descartado') g.descartados++;
+    else if ((l.texto_original || '').trim() === (l.texto_final || '').trim()) g.semEdicao++;
+    else g.editados++;
+  }
+  const lista = Object.values(grupos).map(g => ({ ...g, taxaSemEdicao: g.total ? Math.round(g.semEdicao / g.total * 100) : 0 }));
+  const tot = lista.reduce((a, g) => ({ total: a.total + g.total, semEdicao: a.semEdicao + g.semEdicao }), { total: 0, semEdicao: 0 });
+  res.json({ referencia: '90% sem edição em 50 rascunhos do produto', total: tot.total, taxaSemEdicao: tot.total ? Math.round(tot.semEdicao / tot.total * 100) : 0, porProdutoEtapa: lista });
 });
 
 commandRouter.get('/custo-ia', async (_req, res) => {

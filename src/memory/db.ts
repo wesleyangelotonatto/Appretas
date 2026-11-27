@@ -417,7 +417,7 @@ export function getAusenciaNotice(phone: string): { phone: string; sent_date: st
 
 export function salvarTreinamento(dados: {
   phone: string;
-  tipo: 'rascunho' | 'automatica';
+  tipo: 'rascunho' | 'automatica' | 'vendas' | 'vendas_descartado';
   contexto?: string | null;
   textoOriginal: string;
   textoFinal: string;

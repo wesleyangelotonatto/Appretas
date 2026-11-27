@@ -135,6 +135,7 @@
   <button id="btn-ausencia" onclick="toggleAusencia()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #e67e22;background:#2d1a00;color:#e67e22;cursor:pointer;">Ausencia</button>
   <button id="btn-groups" onclick="toggleGroupsModal()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #3498db;background:#0a1a2d;color:#3498db;cursor:pointer;">Grupos</button>
   <button id="btn-avisos" onclick="abrirAvisos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--blue);background:#0a1d2d;color:var(--blue);cursor:pointer;">Audiências/Prazos (<span id="avisos-count">0</span>)</button>
+  <select id="sel-vendas" onchange="mudarVendas(this.value)" title="Função Vendas" style="margin-left:8px;padding:4px 6px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted)"><option value="desligada">Vendas: desligada</option><option value="treino">Vendas: treino</option><option value="ligada">Vendas: ligada</option></select> <a href="/vendas.html" style="font-size:11px;color:var(--text-muted)">placar</a>
   <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Modo Treino: desligado</button>
   <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Rascunhos pendentes (<span id="all-approvals-count">0</span>)</button>
   <button onclick="abrirRelatorios()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #9b59b6;background:#1a0a2d;color:#9b59b6;cursor:pointer;">Relatórios</button>
@@ -525,6 +526,7 @@
           <span style="color:var(--text-muted);font-size:11px;"> — ${escHtml(a.phone)}</span>
           ${a.tipo_contato ? `<span class="badge" style="margin-left:6px;font-size:9px;">${escHtml(a.tipo_contato)}</span>` : ''}
         </div>
+        ${infoVendas(a.context)}
         <div class="draft-text" id="draft-text-${a.id}">${escHtml(a.draft)}</div>
         <textarea class="edit-area" id="edit-${a.id}">${escHtml(a.draft)}</textarea>
         <div class="approval-actions">
@@ -561,8 +563,20 @@
     renderApprovals();
   }
 
+  // Rascunho da função Vendas: mostra produto, regra do roteiro e etapa sugerida
+  function ctxVendas(c) { try { const j = JSON.parse(c || ''); return j && j.funcao === 'vendas' ? j : null; } catch (e) { return null; } }
+  function infoVendas(c) {
+    const v = ctxVendas(c); if (!v) return '';
+    return `<div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;border-left:2px solid #805ad5;padding-left:6px">
+      <b style="color:#b794f4">Vendas (treino)</b> · ${escHtml(v.produto || 'produto a identificar')} · ${escHtml(v.regra || '')}
+      ${v.etapaSugerida ? `<br>Etapa sugerida: <b>${escHtml(v.etapaSugerida)}</b> (vale ao aprovar)` : ''}${v.proximoPasso ? ` · Próximo passo: ${escHtml(v.proximoPasso)}` : ''}</div>`;
+  }
+
   async function discardApproval(id) {
-    await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:'',draft:'__DISCARD__'})});
+    const ap = pendingApprovals.find(a => a.id === id);
+    let motivo = '';
+    if (ap && ctxVendas(ap.context)) { motivo = prompt('Por que descartar? (ajuda a Iara a aprender)', ''); if (motivo === null) return; }
+    await fetch('/command/approve/'+id, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:'',draft:'__DISCARD__',motivo})});
     pendingApprovals = pendingApprovals.filter(a => a.id !== id);
     renderApprovals();
   }
@@ -1105,6 +1119,14 @@
       if (badge) badge.style.display = 'none';
     }
   }
+
+  async function carregarVendas() { try { const r = await fetch('/command/vendas'); const j = await r.json(); document.getElementById('sel-vendas').value = j.posicao; } catch (e) {} }
+  async function mudarVendas(p) {
+    if (p === 'ligada' && !confirm('Ligar a função Vendas faz a Iara responder os leads sozinha, sem aprovação. Confirmar?')) { carregarVendas(); return; }
+    await fetch('/command/vendas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ posicao: p }) });
+    carregarVendas();
+  }
+  carregarVendas();
 
   async function toggleCalibragem() {
     if (calibragemAtiva) {

@@ -18,6 +18,8 @@ import {
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
 import { detectAppointment } from './appointmentDetector';
+import { posicaoVendas, ehDaFuncaoVendas, redigirVendas } from '../vendas/vendas';
+import { fichaDoCRM } from '../integrations/crm';
 
 interface IncomingMessage {
   phone: string;
@@ -513,6 +515,31 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
 
     let draft = '';
     let context = '';
+
+    // Função Vendas (4.4): leads seguem o funil com o POP do produto e a ficha do CRM.
+    // Em TREINO nada vai ao lead: rascunho para aprovação, sem efeitos colaterais.
+    const posVendas = posicaoVendas();
+    if (posVendas !== 'desligada') {
+      const ficha = await fichaDoCRM(phone);
+      if (ehDaFuncaoVendas(ficha, classification.type)) {
+        const rv = await redigirVendas(phone, textBody, historicoConversa, generoFinal);
+        if (rv) {
+          const ctxVendas = JSON.stringify({
+            funcao: 'vendas', modo: posVendas, produto: rv.produto, etapaAtual: ficha?.etapa?.codigo || null,
+            etapaSugerida: rv.etapaSugerida, proximoPasso: rv.proximoPasso, regra: rv.regra, mensagemCliente: textBody.slice(0, 500),
+          });
+          if (posVendas === 'treino' || rv.incompleto) {
+            const id = savePendingApproval(phone, rv.mensagem, ctxVendas);
+            io?.emit('pending_approval', { id, phone, draft: rv.mensagem, context: ctxVendas, timestamp: Date.now(), nome: displayName, tipo_contato: 'LEAD (Vendas)' });
+            console.log(`[vendas] rascunho de treino para ${phone} (${rv.produto || 'produto ?'} · ${rv.regra || '-'})`);
+          } else {
+            await deliverOrQueue(phone, rv.mensagem, ctxVendas, io, displayName);
+          }
+          return;
+        }
+        console.error(`[vendas] sem rascunho para ${phone} — segue o fluxo da Secretária`);
+      }
+    }
 
     switch (classification.type as ClassificationType) {
         case 'PROCESSO_ATIVO': {
