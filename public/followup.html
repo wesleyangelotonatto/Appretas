@@ -18,7 +18,8 @@ details summary{cursor:pointer;font-weight:600;padding:6px 0}
 <button id="btnLiga" class="liga" onclick="ligar()">…</button>
 <p class="mut">Quando ligado, a Iara manda sozinha as mensagens abaixo para leads que <b>pararam de responder</b>, só das 8h às 21h, no máximo 20 por hora e com pelo menos 20 horas entre uma mensagem e outra para o mesmo lead. Se o lead responder, a sequência recomeça do zero. A pausa geral da Iara também segura o follow-up.</p></div>
 <div class="bloco"><h3 style="margin-top:0">Para quais etapas</h3><div id="etapas"></div>
-<label class="mut" style="display:block;margin-top:8px">Só leads que conversaram nos últimos <input id="dias" type="number" min="1" max="180" style="width:80px;display:inline-block"> dias</label>
+<label class="mut" style="display:block;margin-top:8px">Começar sequência só para leads que conversaram nos últimos <input id="dias" type="number" min="1" max="180" style="width:80px;display:inline-block"> dias</label>
+<p class="mut">Esse limite vale só para começar. Quem já está recebendo a sequência vai até o fim, e o "12 Retornar em" sempre recebe na data combinada, mesmo que seja daqui a meses.</p>
 <button onclick="salvar()">Salvar etapas</button></div>
 <div class="bloco"><h3 style="margin-top:0">Textos (frases prontas)</h3>
 <p class="mut">Lacunas entre chaves são completadas pela Iara com o que está na conversa: {nome}, {produto}, {documento}, {ponto}, {data}. Se ela não tiver a informação, a mensagem vai para a sua aprovação em vez de sair.</p>

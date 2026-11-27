@@ -98,9 +98,13 @@ export async function rodarCadencias(): Promise<{ enviados: number; analisados: 
     const ultimo = msgs[msgs.length - 1];
     if (!ultCliente || ultimo.role === 'client') continue; // lead falou por último: é resposta, não follow-up
     if (!cfg.etapas[lead.etapa]) continue;
-    // Só quem conversou nos últimos N dias (padrão 30)
-    if (Date.now() / 1000 - ultCliente.created_at > cfg.diasConversa * 86400) continue;
     const chaveCad = lead.etapa;
+    // A janela de N dias (padrão 30) vale só para COMEÇAR uma sequência: quem já recebeu
+    // algum toque desde a última fala continua até o fim, e o "12 Retornar em" sempre
+    // recebe na data combinada, por mais longe que ela esteja.
+    const emAndamento = (db.prepare('SELECT COUNT(*) n FROM vendas_toques WHERE phone = ? AND cadencia = ? AND base = ?').get(phone, chaveCad, ultCliente.created_at) as any).n > 0;
+    const retornoCombinado = lead.etapa === '12' && !!lead.proximoPrazo;
+    if (!emAndamento && !retornoCombinado && Date.now() / 1000 - ultCliente.created_at > cfg.diasConversa * 86400) continue;
     let cad: ToqueTexto[] = cfg.textos[chaveCad] || [];
     if (lead.etapa === '12') cad = lead.proximoPrazo ? cad.slice(0, 1).map(t => ({ ...t, dia: Math.max(0, Math.round((Date.parse(lead.proximoPrazo + 'T08:00:00-03:00') / 1000 - ultCliente.created_at) / 86400)) })) : [];
     if (!cad.length) continue;
