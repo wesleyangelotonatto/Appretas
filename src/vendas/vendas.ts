@@ -6,7 +6,7 @@
 import { criarMensagem } from '../ia';
 import { buildSystemPrompt, aplicarGlossario } from '../persona';
 import { getSetting, setSetting, getRecentCorrections, getDb } from '../memory/db';
-import { fichaDoCRM, configDoCRM, FichaCRM } from '../integrations/crm';
+import { fichaDoCRM, configDoCRM, FichaCRM, registrarNaFicha } from '../integrations/crm';
 import { PRINCIPIO, CONEXAO, QUEMFALA, OBJECOES, COMPORTAMENTO, COMANDO, COMUM } from './textosPlano';
 import type { Genero } from '../persona';
 
@@ -52,6 +52,9 @@ function escolherProduto(ficha: FichaCRM | null, produtos: Produto[], texto: str
 }
 
 export interface RascunhoVendas {
+  provasAceitas?: boolean;
+  fraseObrigatoria?: number | null;
+  revisao?: { ok: boolean; problemas: string[]; reescrito: boolean; faltamFrases: number[] };
   mensagem: string;
   etapaSugerida: string | null;
   proximoPasso: string | null;
@@ -70,6 +73,11 @@ function resumoFicha(f: FichaCRM | null): string {
     `Próximo passo combinado: ${f.proximo?.passo || '-'}${f.proximo?.prazo ? ' até ' + f.proximo.prazo : ''}`,
     `Etiquetas: ${(f.etiquetas || []).join(', ') || '-'}`,
     notas ? `Ligações e notas do escritório (leia antes de responder):\n${notas}` : '',
+    f.perfil ? `Perfil do lead (use para adaptar o jeito de falar):\n${f.perfil.slice(0, 1500)}` : '',
+    f.notasIara?.length ? `Suas notas anteriores sobre este lead:\n${f.notasIara.map(n => '- ' + (n.detalhe || '').slice(0, 500)).join('\n')}` : '',
+    f.documentos ? `Documentos: ${f.documentos.completos ? 'indispensáveis completos' : 'faltam ' + f.documentos.faltam.join(', ')}${f.documentos.dataPrometida ? ' (prometeu até ' + f.documentos.dataPrometida + ')' : ''}` : '',
+    f.envios && Object.keys(f.envios).length ? `Já enviado pelo Dr. Wesley: ${Object.keys(f.envios).join(', ')}` : '',
+    f.tarefasAbertas?.length ? `Tarefas abertas do escritório: ${f.tarefasAbertas.join('; ')}` : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -107,7 +115,9 @@ Responda SOMENTE com um JSON, sem markdown:
 {"mensagem": "texto para o WhatsApp, curto, uma ideia por vez",
  "etapa_sugerida": "código de 2 dígitos da etapa do funil que a conversa deve ter depois desta mensagem, ou null se continua",
  "proximo_passo": "o próximo passo combinado ou a combinar, em poucas palavras",
- "regra": "qual parte do roteiro você usou (ex.: 'POP Proagro negado, pergunta 3', 'objeção OB-A', 'pergunta de conexão')"}`;
+ "regra": "qual parte do roteiro você usou (ex.: 'POP Proagro negado, pergunta 3', 'objeção OB-A', 'pergunta de conexão')",
+ "provas_aceitas": true ou false (true só se o lead ACEITOU agora receber decisões de casos parecidos ou contato de clientes),
+ "frase_obrigatoria": 1, 2, 3 ou null (qual das três mensagens obrigatórias esta resposta transmite)}`;
 
   const r = await criarMensagem('resposta', { max_tokens: 900, system, cacheSystem: true, messages: [{ role: 'user', content: pedido }] });
   const bloco = r.content[0];
@@ -121,7 +131,88 @@ Responda SOMENTE com um JSON, sem markdown:
   return {
     mensagem, etapaSugerida: etapa, proximoPasso: j?.proximo_passo || null, regra: j?.regra || null,
     produto: produto?.nome || null, incompleto: incompleto || !j,
+    provasAceitas: j?.provas_aceitas === true, fraseObrigatoria: [1, 2, 3].includes(Number(j?.frase_obrigatoria)) ? Number(j.frase_obrigatoria) : null,
   };
+}
+
+// ===== Revisor (4.15, item 4): confere cada rascunho de Vendas antes de chegar ao Wesley =====
+// Reescreve no máximo 1 vez; se ainda houver problema, o rascunho vai marcado para aprovação.
+const FRASES = [
+  'Vamos lutar pra conseguir esse resultado pro senhor e pra nós.',
+  'O seu ganho é o nosso ganho.',
+  'Vamos fazer o melhor pro senhor nos indicar e ser nosso cliente sempre, pra outros casos também.',
+];
+
+function frasesJaDitas(historico: Array<{ role: string; body: string }>): number[] {
+  const n = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const ditas: number[] = [];
+  const falas = historico.filter(m => m.role !== 'client').map(m => n(m.body)).join(' ');
+  if (/lutar.{0,40}resultado/.test(falas)) ditas.push(1);
+  if (/seu ganho e o nosso ganho/.test(falas)) ditas.push(2);
+  if (/nos indicar/.test(falas)) ditas.push(3);
+  return ditas;
+}
+
+export async function revisar(rv: RascunhoVendas, historico: Array<{ role: string; body: string }>, etapa: string | null) {
+  const pedido = `Você revisa uma mensagem que a assistente Iara quer mandar a um lead de um escritório de advocacia do agro.
+Aponte SOMENTE problemas reais destas regras:
+1. Promete resultado, ganho certo ou prazo ("vamos ganhar", "com certeza", "em X meses recebe").
+2. Dá parecer jurídico definitivo (só o Dr. Wesley analisa).
+3. Inventa valores, decisões, casos ou dados que não estão na conversa.
+4. Nega ser assistente virtual, ou se passa pelo Dr. Wesley.
+5. Usa urgência falsa, medo exagerado ou pressão para fechar.
+6. Fala de honorários diferentes de: êxito por faixa (30% até 50 mil; 25% até 100 mil; 20% acima) em Proagro/seguro; R$ 5.000 de entrada + 10% do que reduzir ou 20% do que receber na revisão; R$ 10.000 só com decisão no leilão.
+7. Frase de acolhimento genérica ("compreendo sua preocupação", "sinto muito pelo ocorrido") ou mensagem longa demais para WhatsApp (mais de ~5 linhas).
+8. Envia ou promete enviar ela mesma decisões ou contatos de clientes (só pode OFERECER; quem envia é o Dr. Wesley).
+
+ÚLTIMAS MENSAGENS:
+${historico.slice(-8).map(m => `${m.role === 'client' ? 'Lead' : 'Escritório'}: ${m.body}`).join('\n')}
+
+MENSAGEM PROPOSTA:
+"${rv.mensagem}"
+
+Responda SOMENTE um JSON: {"ok": true|false, "problemas": ["regra N: explicação curta"], "reescrita": "a mensagem corrigida, mantendo o sentido e o tom, ou null se ok"}`;
+  let res: any = { ok: true, problemas: [], reescrita: null };
+  try {
+    const r = await criarMensagem('rapido', { max_tokens: 700, messages: [{ role: 'user', content: pedido }] });
+    const b = r.content[0];
+    res = JSON.parse(((b && b.type === 'text' ? b.text : '').match(/\{[\s\S]*\}/) || ['{}'])[0]);
+  } catch (err) { console.error('[vendas] revisor:', (err as Error).message); return { ...rv, revisao: { ok: false, problemas: ['revisor indisponível — conferir à mão'], reescrito: false, faltamFrases: [] } }; }
+  // Frases obrigatórias: no momento da proposta/fechamento (07–10) ou hesitação, as que ainda não foram ditas
+  const ditas = frasesJaDitas(historico).concat(rv.fraseObrigatoria ? [rv.fraseObrigatoria] : []);
+  const faltam = etapa && ['07', '08', '09', '10'].includes(etapa) ? [1, 2, 3].filter(i => !ditas.includes(i)) : [];
+  const problemas: string[] = Array.isArray(res.problemas) ? res.problemas.slice(0, 6) : [];
+  if (!res.ok && res.reescrita && String(res.reescrita).trim()) {
+    return { ...rv, mensagem: aplicarGlossario(String(res.reescrita).trim()), revisao: { ok: false, problemas, reescrito: true, faltamFrases: faltam } };
+  }
+  return { ...rv, revisao: { ok: !!res.ok && !problemas.length, problemas, reescrito: false, faltamFrases: faltam } };
+}
+
+export function textoFrase(i: number) { return FRASES[i - 1]; }
+
+// Perfil vivo e "Nota da Iara" (T2): no máximo a cada 6 h por lead, função não essencial
+const ultimoPerfil = new Map<string, number>();
+export async function atualizarPerfilENota(phone: string, historico: Array<{ role: string; body: string }>, ficha: FichaCRM | null) {
+  if (Date.now() - (ultimoPerfil.get(phone) || 0) < 6 * 3600 * 1000) return;
+  ultimoPerfil.set(phone, Date.now());
+  const { tetoEstourado } = await import('../ia');
+  if (await tetoEstourado()) return;
+  const pedido = `Conversa de um lead com o escritório (agro, advocacia):
+${historico.slice(-30).map(m => `${m.role === 'client' ? 'Lead' : m.role === 'iara' ? 'Iara' : 'Dr. Wesley'}: ${m.body}`).join('\n')}
+
+Perfil atual: ${ficha?.perfil || '(nenhum)'}
+
+Responda SOMENTE um JSON:
+{"perfil": "até 8 linhas: como se comunica, quem decide, situação financeira percebida, cidade/cultura, motivo e desejo (com as palavras dele), medos e objeções (respondidas ou não)",
+ "nota": "nota interna curta: o que funcionou e o que não funcionou, ganho estimado discutido e reação, próximo passo combinado, e uma 'Lição para a Iara'"}
+Não invente nada que não esteja na conversa.`;
+  try {
+    const r = await criarMensagem('rapido', { max_tokens: 900, essencial: false, messages: [{ role: 'user', content: pedido }] });
+    const b = r.content[0];
+    const j = JSON.parse(((b && b.type === 'text' ? b.text : '').match(/\{[\s\S]*\}/) || ['{}'])[0]);
+    if (j.perfil) await registrarNaFicha(phone, { tipo: 'perfil', perfil: j.perfil });
+    if (j.nota) await registrarNaFicha(phone, { tipo: 'nota_iara', titulo: 'Nota da Iara', detalhe: j.nota });
+  } catch (err) { console.error('[vendas] perfil/nota:', (err as Error).message); }
 }
 
 // ===== Treino sobre conversas reais passadas (4.4.1) =====
@@ -165,8 +256,10 @@ export async function reprocessarConversas(limite = 10, dias = 60): Promise<{ ge
     if (idx < 0) { pulados++; continue; }
     try {
       const hist = msgs.slice(Math.max(0, idx - 20), idx).map(m => ({ role: m.role, body: m.body }));
-      const rv = await redigirVendas(s.phone, msgs[idx].body, hist);
-      if (!rv) { erros++; continue; }
+      const rv0 = await redigirVendas(s.phone, msgs[idx].body, hist);
+      if (!rv0) { erros++; continue; }
+      const rv = await revisar(rv0, hist.concat([{ role: 'client', body: msgs[idx].body }]), ficha.etapa?.codigo || null);
+      if (rv.revisao && rv.revisao.problemas.length) rv.regra = (rv.regra || '') + ' · Revisor' + (rv.revisao.reescrito ? ' (reescreveu)' : '') + ': ' + rv.revisao.problemas.join(' | ');
       db.prepare(`INSERT INTO vendas_comparacao (phone, nome, mensagem_cliente, resposta_real, quem_respondeu, rascunho_iara, produto, regra, etapa_sugerida, momento)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(s.phone, s.name, msgs[idx].body, msgs[resp].body, msgs[resp].role === 'iara' ? 'Iara' : 'Dr. Wesley',
         rv.mensagem, rv.produto, rv.regra, rv.etapaSugerida, msgs[idx].created_at);

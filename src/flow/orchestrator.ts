@@ -18,8 +18,8 @@ import {
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
 import { detectAppointment } from './appointmentDetector';
-import { posicaoVendas, ehDaFuncaoVendas, redigirVendas } from '../vendas/vendas';
-import { fichaDoCRM } from '../integrations/crm';
+import { posicaoVendas, ehDaFuncaoVendas, redigirVendas, revisar, atualizarPerfilENota } from '../vendas/vendas';
+import { fichaDoCRM, registrarNaFicha } from '../integrations/crm';
 
 interface IncomingMessage {
   phone: string;
@@ -522,13 +522,20 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     if (posVendas !== 'desligada') {
       const ficha = await fichaDoCRM(phone);
       if (ehDaFuncaoVendas(ficha, classification.type)) {
-        const rv = await redigirVendas(phone, textBody, historicoConversa, generoFinal);
+        const rv0 = await redigirVendas(phone, textBody, historicoConversa, generoFinal);
+        const rv = rv0 ? await revisar(rv0, historicoConversa.concat([{ role: 'client', body: textBody }]), ficha?.etapa?.codigo || null) : null;
         if (rv) {
           const ctxVendas = JSON.stringify({
             funcao: 'vendas', modo: posVendas, produto: rv.produto, etapaAtual: ficha?.etapa?.codigo || null,
             etapaSugerida: rv.etapaSugerida, proximoPasso: rv.proximoPasso, regra: rv.regra, mensagemCliente: textBody.slice(0, 500),
+            provasAceitas: !!rv.provasAceitas, revisao: rv.revisao || null,
           });
-          if (posVendas === 'treino' || rv.incompleto) {
+          // Rascunho também na ficha do CRM; perfil e nota em segundo plano (não essencial)
+          registrarNaFicha(phone, { tipo: 'rascunho_iara', titulo: 'Rascunho da Iara (' + (posVendas === 'treino' ? 'treino' : 'Vendas') + ')' + (rv.etapaSugerida ? ' · etapa sugerida ' + rv.etapaSugerida : ''),
+            detalhe: rv.mensagem + (rv.revisao && rv.revisao.problemas.length ? '\n\nRevisor: ' + rv.revisao.problemas.join(' | ') : ''), meta: { regra: rv.regra, produto: rv.produto } }).catch(() => {});
+          atualizarPerfilENota(phone, historicoConversa.concat([{ role: 'client', body: textBody }]), ficha).catch(() => {});
+          const precisaOlhar = !!(rv.revisao && (!rv.revisao.ok || rv.revisao.reescrito));
+          if (posVendas === 'treino' || rv.incompleto || precisaOlhar) {
             const id = savePendingApproval(phone, rv.mensagem, ctxVendas);
             io?.emit('pending_approval', { id, phone, draft: rv.mensagem, context: ctxVendas, timestamp: Date.now(), nome: displayName, tipo_contato: 'LEAD (Vendas)' });
             console.log(`[vendas] rascunho de treino para ${phone} (${rv.produto || 'produto ?'} · ${rv.regra || '-'})`);

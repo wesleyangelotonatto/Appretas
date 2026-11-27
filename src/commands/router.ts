@@ -81,6 +81,13 @@ commandRouter.post('/approve/:id', async (req: Request, res: Response) => {
     const ctxV = lerContextoVendas(original?.context);
     if (original && ctxV) {
       salvarTreinamento({ phone, tipo: 'vendas', contexto: original.context, textoOriginal: original.draft, textoFinal: draft });
+      // "Enviar provas" (4.14): a Iara só oferece; aceito pelo lead, vira tarefa do Wesley (1 dia útil)
+      if (ctxV.provasAceitas) {
+        import('../integrations/crm').then(({ registrarNaFicha }) => registrarNaFicha(phone, { tipo: 'tarefa', tarefa: {
+          tipo: 'enviar_provas', titulo: 'Enviar provas ao lead', prazoDiasUteis: 1,
+          detalhe: 'O lead aceitou receber decisões de casos parecidos e/ou contato de clientes. Produto: ' + (ctxV.produto || '?') + '. Pedido: "' + String(ctxV.mensagemCliente || '').slice(0, 300) + '"' } }))
+          .catch(err => console.error('[vendas] tarefa provas:', err));
+      }
       if (ctxV.etapaSugerida && ctxV.etapaSugerida !== ctxV.etapaAtual) {
         import('../integrations/crm').then(({ sugerirEtapa }) => sugerirEtapa(phone, ctxV.etapaSugerida, { observacao: 'Sugerido pela Iara (Vendas) ao aprovar o rascunho' + (ctxV.proximoPasso ? ': ' + ctxV.proximoPasso : '') }))
           .catch(err => console.error('[vendas] etapa sugerida:', err));

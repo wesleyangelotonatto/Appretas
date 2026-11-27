@@ -25,6 +25,23 @@ export interface FichaCRM {
   resultado: { resultado: string; motivo: string | null } | null;
   ligacoesENotas: Array<{ em: number; tipo: string; titulo: string; detalhe: string | null; autor: string | null }>;
   sugestoesPendentes: string[];
+  perfil?: string | null;
+  notasIara?: Array<{ em: number; detalhe: string | null }>;
+  envios?: Record<string, number>;
+  tarefasAbertas?: string[];
+  documentos?: { completos: boolean; faltam: string[]; dataPrometida: string | null } | null;
+}
+
+// Registro na ficha: rascunho, nota interna, tarefa para o Wesley ou perfil vivo
+export async function registrarNaFicha(phone: string, corpo: Record<string, unknown>) {
+  const url = process.env.CRM_URL, chave = process.env.CRM_API_KEY;
+  if (!url || !chave) return null;
+  try {
+    const r = await fetch(url.replace(/\/$/, '') + '/api/integracao/ficha/' + encodeURIComponent(phone.replace(/\D/g, '')) + '/registro', {
+      method: 'POST', headers: { 'x-api-key': chave, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo), signal: AbortSignal.timeout(15000),
+    });
+    return await r.json();
+  } catch (err) { console.error('[crm] registrarNaFicha:', (err as Error).message); return null; }
 }
 
 export function fichaDoCRM(phone: string): Promise<FichaCRM | null> {
