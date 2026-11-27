@@ -366,6 +366,10 @@ commandRouter.post('/takeover', (req, res) => {
   const { phone } = req.body;
   upsertSession(phone, { status: 'takeover' });
   req.app.locals.io?.emit('session_update', { phone, status: 'takeover' });
+  import('../vendas/vendas').then(async ({ briefingDePassagem }) => {
+    const { getHistory } = await import('../memory/db');
+    await briefingDePassagem(phone, getHistory(phone, 60).map((m: any) => ({ role: m.role, body: m.body })));
+  }).catch(err => console.error('[takeover] briefing:', err));
   res.json({ ok: true });
 });
 

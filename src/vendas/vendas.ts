@@ -54,7 +54,7 @@ function escolherProduto(ficha: FichaCRM | null, produtos: Produto[], texto: str
 export interface RascunhoVendas {
   provasAceitas?: boolean;
   fraseObrigatoria?: number | null;
-  revisao?: { ok: boolean; problemas: string[]; reescrito: boolean; faltamFrases: number[] };
+  revisao?: { ok: boolean; problemas: string[]; reescrito: boolean; faltamFrases: number[]; sensivel?: string | null };
   mensagem: string;
   etapaSugerida: string | null;
   proximoPasso: string | null;
@@ -114,6 +114,9 @@ Regras do follow-up: traga algo NOVO e útil (nunca "só passando para saber"), 
 "${mensagemCliente}"`}
 ${correcoes.length ? `\nCORREÇÕES RECENTES DO DR. WESLEY (prefira o estilo corrigido):\n${correcoes.map((c, i) => `${i + 1}. Original: "${c.original.slice(0, 400)}" → Corrigido: "${c.corrected.slice(0, 400)}"`).join('\n')}\n` : ''}
 Redija a PRÓXIMA mensagem da Iara para este lead, seguindo a função Vendas e o POP.
+Se a última mensagem for um documento ou foto ("[Documento recebido: …]"), CONFIRME na hora o que chegou (pelo nome do arquivo),
+diga com clareza o que ainda falta (veja "Documentos" na ficha; se não houver lista, peça o próximo documento do POP)
+e pergunte até quando ele consegue mandar o restante.
 Responda SOMENTE com um JSON, sem markdown:
 {"mensagem": "texto para o WhatsApp, curto, uma ideia por vez",
  "etapa_sugerida": "código de 2 dígitos da etapa do funil que a conversa deve ter depois desta mensagem, ou null se continua",
@@ -179,21 +182,28 @@ ${historico.slice(-8).map(m => `${m.role === 'client' ? 'Lead' : 'Escritório'}:
 MENSAGEM PROPOSTA:
 "${rv.mensagem}"
 
-Responda SOMENTE um JSON: {"ok": true|false, "problemas": ["regra N: explicação curta"], "reescrita": "a mensagem corrigida, mantendo o sentido e o tom, ou null se ok"}`;
+Responda SOMENTE um JSON: {"ok": true|false, "problemas": ["regra N: explicação curta"], "reescrita": "a mensagem corrigida, mantendo o sentido e o tom, ou null se ok",
+ "sensivel": null ou "assunto: trecho do lead" quando o LEAD fala de preço/valor de honorários, contrato, reclamação, ameaça de desistir ou negociação delicada}`;
   let res: any = { ok: true, problemas: [], reescrita: null };
   try {
     const r = await criarMensagem('rapido', { max_tokens: 700, messages: [{ role: 'user', content: pedido }] });
     const b = r.content[0];
     res = JSON.parse(((b && b.type === 'text' ? b.text : '').match(/\{[\s\S]*\}/) || ['{}'])[0]);
-  } catch (err) { console.error('[vendas] revisor:', (err as Error).message); return { ...rv, revisao: { ok: false, problemas: ['revisor indisponível — conferir à mão'], reescrito: false, faltamFrases: [] } }; }
+  } catch (err) { console.error('[vendas] revisor:', (err as Error).message); return { ...rv, revisao: { ok: false, problemas: ['revisor indisponível — conferir à mão'], reescrito: false, faltamFrases: [], sensivel: null } }; }
   // Frases obrigatórias: no momento da proposta/fechamento (07–10) ou hesitação, as que ainda não foram ditas
   const ditas = frasesJaDitas(historico).concat(rv.fraseObrigatoria ? [rv.fraseObrigatoria] : []);
   const faltam = etapa && ['07', '08', '09', '10'].includes(etapa) ? [1, 2, 3].filter(i => !ditas.includes(i)) : [];
   const problemas: string[] = Array.isArray(res.problemas) ? res.problemas.slice(0, 6) : [];
+  // Variação (4.9): nunca repetir mensagem já enviada nesta conversa
+  const tri = (t: string) => { const w = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean); const out = new Set<string>(); for (let i = 0; i + 2 < w.length; i++) out.add(w.slice(i, i + 3).join(' ')); return out; };
+  const novo = tri(rv.mensagem);
+  const repetida = novo.size >= 4 && historico.filter(m => m.role !== 'client').some(m => { const a = tri(m.body); let c = 0; novo.forEach(x => { if (a.has(x)) c++; }); return c / novo.size > 0.6; });
+  if (repetida) { problemas.push('regra 9: repete mensagem já enviada nesta conversa'); res.ok = false; }
+  const sensivel = res.sensivel ? String(res.sensivel).slice(0, 200) : null;
   if (!res.ok && res.reescrita && String(res.reescrita).trim()) {
-    return { ...rv, mensagem: aplicarGlossario(String(res.reescrita).trim()), revisao: { ok: false, problemas, reescrito: true, faltamFrases: faltam } };
+    return { ...rv, mensagem: aplicarGlossario(String(res.reescrita).trim()), revisao: { ok: false, problemas, reescrito: true, faltamFrases: faltam, sensivel } };
   }
-  return { ...rv, revisao: { ok: !!res.ok && !problemas.length, problemas, reescrito: false, faltamFrases: faltam } };
+  return { ...rv, revisao: { ok: !!res.ok && !problemas.length, problemas, reescrito: false, faltamFrases: faltam, sensivel } };
 }
 
 export function textoFrase(i: number) { return FRASES[i - 1]; }
@@ -291,4 +301,21 @@ export function limparComparacoes() { garantirTabela(); return getDb().prepare('
 export function listarComparacoes(limite = 50) {
   garantirTabela();
   return getDb().prepare('SELECT * FROM vendas_comparacao ORDER BY criado_em DESC LIMIT ?').all(limite);
+}
+
+// Briefing de passagem (4.9): quando o Wesley assume a conversa, resumo pronto na ficha
+export async function briefingDePassagem(phone: string, historico: Array<{ role: string; body: string }>) {
+  if (!historico.length) return;
+  const pedido = `O Dr. Wesley vai assumir esta conversa agora. Escreva um briefing curto (até 8 linhas) para ele:
+quem é a pessoa e o que ela quer; o que já foi dito e combinado; dúvidas ou medos em aberto; o que ela está esperando como resposta agora;
+sugestão de próxima fala. Sem inventar nada.
+
+Conversa (mais recente no fim):
+${historico.slice(-40).map(m => `${m.role === 'client' ? 'Cliente' : m.role === 'iara' ? 'Iara' : 'Dr. Wesley'}: ${m.body}`).join('\n')}`;
+  try {
+    const r = await criarMensagem('rapido', { max_tokens: 600, essencial: false, messages: [{ role: 'user', content: pedido }] });
+    const b = r.content[0];
+    const texto = b && b.type === 'text' ? b.text.trim() : '';
+    if (texto) await registrarNaFicha(phone, { tipo: 'nota_iara', titulo: 'Briefing de passagem (o senhor assumiu a conversa)', detalhe: texto });
+  } catch (err) { console.error('[vendas] briefing:', (err as Error).message); }
 }

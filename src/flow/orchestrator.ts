@@ -552,7 +552,9 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
           registrarNaFicha(phone, { tipo: 'rascunho_iara', titulo: 'Rascunho da Iara (' + (posVendas === 'treino' ? 'treino' : 'Vendas') + ')' + (rv.etapaSugerida ? ' · etapa sugerida ' + rv.etapaSugerida : ''),
             detalhe: rv.mensagem + (rv.revisao && rv.revisao.problemas.length ? '\n\nRevisor: ' + rv.revisao.problemas.join(' | ') : ''), meta: { regra: rv.regra, produto: rv.produto } }).catch(() => {});
           atualizarPerfilENota(phone, historicoConversa.concat([{ role: 'client', body: textBody }]), ficha).catch(() => {});
-          const precisaOlhar = !!(rv.revisao && (!rv.revisao.ok || rv.revisao.reescrito));
+          // Assunto sensível (4.9): vai para "Aguardando você" no CRM com a frase que gerou o alerta
+          if (rv.revisao?.sensivel) registrarNaFicha(phone, { tipo: 'tarefa', tarefa: { tipo: 'assunto_sensivel', titulo: 'Assunto sensível na conversa', prazoDiasUteis: 1, detalhe: rv.revisao.sensivel } }).catch(() => {});
+          const precisaOlhar = !!(rv.revisao && (!rv.revisao.ok || rv.revisao.reescrito || rv.revisao.sensivel));
           if (posVendas === 'treino' || rv.incompleto || precisaOlhar) {
             const id = savePendingApproval(phone, rv.mensagem, ctxVendas);
             io?.emit('pending_approval', { id, phone, draft: rv.mensagem, context: ctxVendas, timestamp: Date.now(), nome: displayName, tipo_contato: 'LEAD (Vendas)' });
@@ -616,6 +618,11 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
             }
           }
 
+          // Cliente com processo reconhecido: etiqueta "Clientes Processos ativos" (2.3), no máximo 1 vez por mês
+          if (trelloCard && !jaEnviouTipo(phone, 'etiqueta_cliente_ativo', 24 * 30)) {
+            registrarTipoEnviado(phone, 'etiqueta_cliente_ativo');
+            registrarNaFicha(phone, { tipo: 'etiqueta', nome: 'Clientes Processos ativos' }).catch(() => {});
+          }
           const djenData = numBusca ? await consultarDjen(numBusca) : null;
           context = JSON.stringify({ contact, djen: djenData, trello: trelloCard, nomeMencionado, contraParteMencionada, customInstruction });
           draft = await draftResponse(classification.type, textBody, context, generoFinal, historicoConversa);

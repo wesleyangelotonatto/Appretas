@@ -575,6 +575,7 @@
       ${v.etapaSugerida ? `<br>Etapa sugerida: <b>${escHtml(v.etapaSugerida)}</b> (vale ao aprovar)` : ''}${v.proximoPasso ? ` · Próximo passo: ${escHtml(v.proximoPasso)}` : ''}
       ${v.provasAceitas ? `<br><b style="color:#f6ad55">Lead aceitou receber provas</b>: ao aprovar, vira tarefa "Enviar provas" para o senhor` : ''}
       ${v.revisao && v.revisao.problemas && v.revisao.problemas.length ? `<br><span style="color:#fc8181">Revisor${v.revisao.reescrito ? ' (reescreveu)' : ''}: ${escHtml(v.revisao.problemas.join(' | '))}</span>` : (v.revisao && v.revisao.ok ? '<br><span style="color:#68d391">Revisor: ok</span>' : '')}
+      ${v.revisao && v.revisao.sensivel ? `<br><b style="color:#f6ad55">Assunto sensível</b>: ${escHtml(v.revisao.sensivel)} (virou tarefa no CRM)` : ''}
       ${v.revisao && v.revisao.faltamFrases && v.revisao.faltamFrases.length ? `<br>Frases obrigatórias ainda não ditas nesta conversa: ${v.revisao.faltamFrases.join(', ')}` : ''}</div>`;
   }
 
