@@ -684,6 +684,10 @@ commandRouter.post('/vendas/reprocessar', async (req, res) => {
   const limite = Math.min(30, Math.max(1, Number(req.body?.limite) || 10));
   res.json(await reprocessarConversas(limite));
 });
+commandRouter.post('/vendas/comparacoes/limpar', async (_req, res) => {
+  const { limparComparacoes } = await import('../vendas/vendas');
+  res.json({ removidas: limparComparacoes() });
+});
 commandRouter.get('/vendas/comparacoes', async (_req, res) => {
   const { listarComparacoes } = await import('../vendas/vendas');
   res.json({ comparacoes: listarComparacoes(100) });

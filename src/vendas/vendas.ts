@@ -148,21 +148,32 @@ export async function reprocessarConversas(limite = 10, dias = 60): Promise<{ ge
     if (await tetoEstourado()) break;
     const msgs = db.prepare('SELECT role, body, created_at FROM messages WHERE phone = ? ORDER BY created_at').all(s.phone) as any[];
     // Último ponto em que o lead falou e alguém do escritório respondeu em seguida
-    let idx = -1;
-    for (let i = msgs.length - 2; i >= 0; i--) if (msgs[i].role === 'client' && msgs[i + 1].role !== 'client') { idx = i; break; }
+    // (ignora eco: resposta igual ao que o lead disse, ou vazia)
+    const limpa = (t: string) => String(t || '').replace(/\*_[^*]*:_\*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+    let idx = -1, resp = -1;
+    for (let i = msgs.length - 2; i >= 0 && idx < 0; i--) {
+      if (msgs[i].role !== 'client' || limpa(msgs[i].body).length < 2) continue;
+      for (let k = i + 1; k < Math.min(msgs.length, i + 4); k++) {
+        if (msgs[k].role === 'client') break;
+        const r = limpa(msgs[k].body);
+        if (r.length >= 2 && r !== limpa(msgs[i].body)) { idx = i; resp = k; break; }
+      }
+    }
     if (idx < 0) { pulados++; continue; }
     try {
       const hist = msgs.slice(Math.max(0, idx - 20), idx).map(m => ({ role: m.role, body: m.body }));
       const rv = await redigirVendas(s.phone, msgs[idx].body, hist);
       if (!rv) { erros++; continue; }
       db.prepare(`INSERT INTO vendas_comparacao (phone, nome, mensagem_cliente, resposta_real, quem_respondeu, rascunho_iara, produto, regra, etapa_sugerida, momento)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(s.phone, s.name, msgs[idx].body, msgs[idx + 1].body, msgs[idx + 1].role === 'iara' ? 'Iara' : 'Dr. Wesley',
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(s.phone, s.name, msgs[idx].body, msgs[resp].body, msgs[resp].role === 'iara' ? 'Iara' : 'Dr. Wesley',
         rv.mensagem, rv.produto, rv.regra, rv.etapaSugerida, msgs[idx].created_at);
       gerados++;
     } catch (err) { erros++; console.error('[vendas] reprocessar', s.phone, (err as Error).message); }
   }
   return { gerados, pulados, erros };
 }
+
+export function limparComparacoes() { garantirTabela(); return getDb().prepare('DELETE FROM vendas_comparacao').run().changes; }
 
 export function listarComparacoes(limite = 50) {
   garantirTabela();
