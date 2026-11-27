@@ -300,6 +300,11 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
   try {
     const session = getSession(phone);
     const calibrando = modoCalibragem();
+    // Nome do cliente para o card do lead: nunca só o número quando o WhatsApp informa o nome
+    const nomeDoContato = () => {
+      const n = (getSession(phone)?.name || waName || '').trim();
+      return n && !/^[\d\s()+-]+$/.test(n) ? n : phone;
+    };
 
     // A janela de agrupamento pode durar 30-60 min: nesse meio-tempo o Wesley pode
     // ter assumido ou pausado o contato, ou pausado a secretária inteira. Reconfere
@@ -581,14 +586,14 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
           }
           context = JSON.stringify({ contact, intent: classification.intent, trello: casoEncontrado, djen: djenCaso, customInstruction });
           draft = await draftResponse(classification.type, textBody, context, generoFinal, historicoConversa);
-          await criarCardLead({ name: contact?.name || phone, phone, summary: classification.intent, type: 'NOVO_CASO_CLIENTE_ANTIGO' });
+          await criarCardLead({ name: contact?.name || nomeDoContato(), phone, summary: `${classification.intent} ${textBody}`, type: 'NOVO_CASO_CLIENTE_ANTIGO' });
           io?.emit('alert', { phone, type: 'novo_caso', message: `Novo caso de cliente antigo: ${contact?.name || phone}` });
           break;
         }
         case 'LEAD_NOVO': {
           context = JSON.stringify({ phone, intent: classification.intent, customInstruction });
           draft = await draftResponse(classification.type, textBody, context, generoFinal, historicoConversa);
-          await criarCardLead({ name: phone, phone, summary: classification.intent, type: 'LEAD_NOVO' });
+          await criarCardLead({ name: nomeDoContato(), phone, summary: `${classification.intent} ${textBody}`, type: 'LEAD_NOVO' });
           io?.emit('alert', { phone, type: 'lead_novo', message: `Novo lead: ${phone} — ${classification.intent}` });
           break;
         }

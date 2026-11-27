@@ -84,12 +84,50 @@ interface LeadData {
   type: string;
 }
 
+// Quadro "Vendas e Leads": todo lead precisa ter ao menos o nome do cliente e uma etiqueta.
+// A etiqueta é escolhida pelo assunto; sem assunto identificado, "Outros Serviços".
+export function escolherEtiquetaLead(texto: string, tipo: string): string {
+  const t = (texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  if (/proagro/.test(t) && /(demor|parad|aguard|sem resposta|ainda nao|esperando|travad)/.test(t)) return 'Proagro Demorando';
+  if (/proagro/.test(t)) return 'Proagro';
+  if (/seguro/.test(t) && /(maquin|trator|colheitadeira|plantadeira|pulverizador|implemento)/.test(t)) return 'Seguro Máquina';
+  if (/seguro/.test(t) && /(lavoura|safra|agricola|soja|milho|trigo|granizo|seca|geada)/.test(t)) return 'Seguro Agrícola';
+  if (/(anuncio|instagram|facebook|vi o video|vi seu video|propaganda)/.test(t)) return 'TRÁFEGO PAGO';
+  if (tipo === 'NOVO_CASO_CLIENTE_ANTIGO') return 'CLIENTE ANTIGO';
+  return 'Outros Serviços';
+}
+
+async function idEtiquetaPorNome(nome: string): Promise<string | null> {
+  const res = await axios.get(`${BASE}/boards/${BOARD_VENDAS()}/labels`, { params: { ...auth(), limit: 100 } });
+  const alvo = nome.toLowerCase();
+  const achada = (res.data as any[]).find(l => String(l.name || '').toLowerCase() === alvo);
+  return achada?.id || null;
+}
+
 export async function criarCardLead(data: LeadData): Promise<string> {
   try {
-    // Pega a primeira lista do board de Vendas
+    const digitos = String(data.phone).replace(/\D/g, '');
+    const nomeEtiqueta = escolherEtiquetaLead(`${data.summary} ${data.name}`, data.type);
+    const idEtiqueta = await idEtiquetaPorNome(nomeEtiqueta);
+
+    // Não duplica: se já existe card do mesmo telefone no quadro, só garante nome e etiqueta
+    const cardsRes = await axios.get(`${BASE}/boards/${BOARD_VENDAS()}/cards`, { params: { ...auth(), fields: 'name,desc,idLabels' } });
+    const existente = (cardsRes.data as any[]).find(c => digitos.length >= 10 && String(c.desc || '').replace(/\D/g, '').includes(digitos.slice(-8)));
+    if (existente) {
+      const nomeAtual = String(existente.name || '');
+      const ehSoNumero = /^[\d\s()+-]+$/.test(nomeAtual);
+      const atualizar: any = {};
+      if (ehSoNumero && data.name && !/^[\d\s()+-]+$/.test(data.name)) atualizar.name = data.name;
+      if (!existente.idLabels?.length && idEtiqueta) atualizar.idLabels = idEtiqueta;
+      if (Object.keys(atualizar).length) await axios.put(`${BASE}/cards/${existente.id}`, null, { params: { ...auth(), ...atualizar } });
+      return existente.id;
+    }
+
+    // Lista "Novo Lead" pelo nome; se não existir, a primeira lista do quadro
     const listsRes = await axios.get(`${BASE}/boards/${BOARD_VENDAS()}/lists`, { params: auth() });
-    const firstList = listsRes.data[0];
-    if (!firstList) throw new Error('Board Vendas sem listas');
+    const listas = listsRes.data as any[];
+    const lista = listas.find(l => /novo lead/i.test(String(l.name))) || listas[0];
+    if (!lista) throw new Error('Quadro Vendas e Leads sem listas');
 
     const desc = [
       `📱 Telefone: ${data.phone}`,
@@ -99,12 +137,13 @@ export async function criarCardLead(data: LeadData): Promise<string> {
     ].join('\n');
 
     const res = await axios.post(`${BASE}/cards`, {
-      name: data.name,
+      name: data.name || data.phone,
       desc,
-      idList: firstList.id,
+      idList: lista.id,
+      ...(idEtiqueta ? { idLabels: [idEtiqueta] } : {}),
       ...auth(),
     });
-
+    console.log(`[trello] lead criado: ${data.name} — etiqueta ${nomeEtiqueta}`);
     return res.data.id;
   } catch (err) {
     console.error('[trello] erro ao criar card lead:', err);

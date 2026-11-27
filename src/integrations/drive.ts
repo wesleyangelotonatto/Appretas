@@ -1,7 +1,22 @@
 import { google } from 'googleapis';
 import { Readable } from 'stream';
 
+// Pastas do Drive (decisão de 27/11):
+// - leads (casos de tráfego/vendas): ADVOCACIA 2025/5. TRÁFEGO - CASOS E DOCS → DRIVE_FOLDER_LEADS_ID
+// - demais documentos e todos os resumos da Iara: ADVOCACIA 2025/Documentos WhatsApp → DRIVE_FOLDER_ID
 const ROOT_FOLDER_ID = () => process.env.DRIVE_FOLDER_ID || '';
+const LEADS_FOLDER_ID = () => process.env.DRIVE_FOLDER_LEADS_ID || process.env.DRIVE_FOLDER_ID || '';
+
+const TIPOS_LEAD = new Set(['LEAD_NOVO', 'NOVO_CASO_CLIENTE_ANTIGO']);
+// Contato ainda sem cadastro mandando documento é tratado como lead (é quem está chegando)
+function pastaDocumentos(phone: string): string {
+  try {
+    const { getSession } = require('../memory/db');
+    const s = getSession(phone);
+    if (!s || TIPOS_LEAD.has(String(s.type || ''))) return LEADS_FOLDER_ID();
+  } catch { /* sem banco: usa a pasta geral */ }
+  return ROOT_FOLDER_ID();
+}
 
 // Mesmo endereço de retorno já cadastrado no cliente OAuth do escritório (usado pelo CRM):
 // evita ter de mexer no Google Cloud para reconectar.
@@ -79,6 +94,13 @@ function escapeDriveQueryValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+// Pasta do cliente no mesmo padrão do CRM: "Nome - telefone" (os dois sistemas usam a mesma)
+function nomePastaCliente(name: string, phone: string): string {
+  const nome = String(name || 'Sem nome').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+  const num = String(phone || '').replace(/\D/g, '');
+  return `${nome} - ${num}`.slice(0, 80);
+}
+
 async function findOrCreateFolder(name: string, parentId: string): Promise<string> {
   const drive = getDrive();
   const safeName = escapeDriveQueryValue(name);
@@ -108,7 +130,7 @@ async function findOrCreateFolder(name: string, parentId: string): Promise<strin
 export async function saveConversationSummary(phone: string, name: string, summary: string, dataStr?: string): Promise<void> {
   try {
     const drive = getDrive();
-    const contactFolder = await findOrCreateFolder(name || phone, ROOT_FOLDER_ID());
+    const contactFolder = await findOrCreateFolder(nomePastaCliente(name, phone), ROOT_FOLDER_ID());
     // Data do dia resumido (AAAA-MM-DD → DD-MM-AAAA), sempre no fuso de São Paulo
     const today = dataStr
       ? dataStr.split('-').reverse().join('-')
@@ -147,7 +169,7 @@ export async function saveConversationSummary(phone: string, name: string, summa
 export async function saveDocument(phone: string, name: string, fileName: string, content: Buffer, mimeType: string): Promise<string> {
   try {
     const drive = getDrive();
-    const contactFolder = await findOrCreateFolder(name || phone, ROOT_FOLDER_ID());
+    const contactFolder = await findOrCreateFolder(nomePastaCliente(name, phone), pastaDocumentos(phone));
 
     const stream = new Readable();
     stream.push(content);
@@ -179,7 +201,7 @@ export async function saveDocument(phone: string, name: string, fileName: string
 export async function enviarBackupDrive(nomeArquivo: string, caminhoLocal: string, manter = 30): Promise<void> {
   const fs = await import('fs');
   const drive = getDrive();
-  const pasta = await findOrCreateFolder('_Backups Iara', ROOT_FOLDER_ID());
+  const pasta = await findOrCreateFolder('_Backups Iara', process.env.DRIVE_FOLDER_BACKUP_ID || ROOT_FOLDER_ID());
   await drive.files.create({
     requestBody: { name: nomeArquivo, parents: [pasta] },
     media: { mimeType: 'application/gzip', body: fs.createReadStream(caminhoLocal) },
@@ -228,7 +250,7 @@ export async function reenviarPendentes(): Promise<{ enviados: number; restantes
     const bin = path.join(dir, f.replace(/\.json$/, '.bin'));
     try {
       const drive = getDrive();
-      const pasta = await findOrCreateFolder(meta.name || meta.phone, ROOT_FOLDER_ID());
+      const pasta = await findOrCreateFolder(nomePastaCliente(meta.name, meta.phone), pastaDocumentos(meta.phone));
       const stream = new Readable(); stream.push(fs.readFileSync(bin)); stream.push(null);
       await drive.files.create({ requestBody: { name: meta.fileName, parents: [pasta], mimeType: meta.mimeType }, media: { mimeType: meta.mimeType, body: stream }, fields: 'id' });
       fs.unlinkSync(bin); fs.unlinkSync(path.join(dir, f));
