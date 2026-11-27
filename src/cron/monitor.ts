@@ -129,7 +129,10 @@ function verificarRotinas(): Array<{ nome: string; rotulo: string; ok: boolean; 
     { nome: 'rotina_backup', rotulo: 'O backup diário das 03h', chave: 'rotina_backup_em', aPartirDe: 3 * 60 + 40, hora: 3 * 60 },
   ];
   return lista.filter(r => minutos >= r.aPartirDe).map(r => {
-    const ultima = parseInt(getSetting(r.chave) || '0', 10);
+    const registro = getSetting(r.chave);
+    // Sem registro ainda (primeiro dia após a implantação): não acusa falha
+    if (!registro) return { nome: r.nome, rotulo: r.rotulo, ok: true, detalhe: 'sem registro ainda' };
+    const ultima = parseInt(registro, 10);
     const ok = ultima >= inicioDiaMs + r.hora * 60000 - 5 * 60000;
     return { nome: r.nome, rotulo: r.rotulo, ok, detalhe: ok ? 'rodou hoje' : 'não rodou hoje' };
   });
