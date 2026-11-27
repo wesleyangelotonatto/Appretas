@@ -466,6 +466,13 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // Menções contextuais ("paguei via pix", "enviei e-mail para ele", "o processo
     // foi por e-mail") NÃO devem acionar — o verbo/pronome precisa indicar pedido
     // direto ao escritório ("qual o seu pix", "me passa o email de vocês", etc.)
+    // 12a. "Você é robô?" — nunca nega ser assistente virtual (4.3). Resposta fixa.
+    if (PERGUNTA_ROBO.test(textBody) && !jaEnviouTipo(phone, 'assistente_virtual', 24)) {
+      registrarTipoEnviado(phone, 'assistente_virtual');
+      await deliverOrQueue(phone, MSG_ASSISTENTE_VIRTUAL, 'pergunta_assistente_virtual', io, contact?.name);
+      return;
+    }
+
     const pedidoPix = PEDIDO_PIX.test(textBody);
     const pedidoEmail = !pedidoPix && PEDIDO_EMAIL.test(textBody);
     if (pedidoPix || pedidoEmail) {
@@ -728,6 +735,14 @@ function saiu(r: { status: string }): boolean {
 // PIX e e-mail: só quando o cliente pede o dado diretamente ("qual seu pix",
 // "me passa o e-mail"…). A palavra sozinha ("paguei no pix", "mandei e-mail pro
 // banco", "golpe do pix") não dispara. Na dúvida, não dispara.
+// Pergunta direta se está falando com robô / IA / pessoa de verdade
+const PERGUNTA_ROBO = new RegExp(
+  String.raw`(?:(?:voc[eê]|vc|tu|c)\s+(?:[eé]|eh|seria)\s+(?:um\s+|uma\s+)?(?:rob[oô]|bot|ia\b|intelig[eê]ncia\s+artificial|m[aá]quina|atendente\s+virtual|assistente\s+virtual|pessoa(?:\s+de\s+verdade|\s+real)?|humana?|gente))` +
+  String.raw`|(?:(?:[eé]|eh)\s+(?:um\s+)?(?:rob[oô]|bot)\s*\?)` +
+  String.raw`|(?:(?:falando|conversando)\s+com\s+(?:um\s+|uma\s+)?(?:rob[oô]|bot|m[aá]quina|ia\b|intelig[eê]ncia\s+artificial|pessoa\s+de\s+verdade))`,
+  'i');
+const MSG_ASSISTENTE_VIRTUAL = 'Sou a Iara, assistente virtual do escritório do Dr. Wesley. Ele faz questão de que ninguém fique esperando, por isso respondo na hora, a qualquer horário. Tudo o que você me contar vai direto para ele e a equipe analisarem, e quando for preciso, ele mesmo te liga.';
+
 const VERBO_PEDIR = String.raw`(?:me\s+)?(?:passa|passe|manda|mande|envia|envie|fala|fale|informa|informe|da|dá|de|dê)`;
 const PEDIDO_PIX = new RegExp(
   String.raw`(?:qual\s+(?:[eé]\s+)?(?:a\s+|o\s+)?(?:sua\s+|seu\s+|teu\s+|tua\s+)?(?:chave\s+)?pix)` +

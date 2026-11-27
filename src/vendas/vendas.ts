@@ -81,7 +81,7 @@ function resumoFicha(f: FichaCRM | null): string {
   ].filter(Boolean).join('\n');
 }
 
-export async function redigirVendas(phone: string, mensagemCliente: string, historico: Array<{ role: string; body: string }>, genero: Genero = 'N'): Promise<RascunhoVendas | null> {
+export async function redigirVendas(phone: string, mensagemCliente: string, historico: Array<{ role: string; body: string }>, genero: Genero = 'N', toque?: string): Promise<RascunhoVendas | null> {
   const [ficha, cfg] = await Promise.all([fichaDoCRM(phone), configDoCRM()]);
   const produtos = ((cfg as any)?.produtos?.produtos || []) as Produto[];
   const textoConversa = historico.map(m => m.body).join(' ') + ' ' + mensagemCliente;
@@ -107,8 +107,11 @@ ${resumoFicha(ficha)}
 HISTÓRICO DA CONVERSA:
 ${hist}
 
-ÚLTIMA MENSAGEM DO LEAD:
-"${mensagemCliente}"
+${toque ? `O LEAD NÃO RESPONDEU. Esta é uma mensagem de RETOMADA (follow-up), não uma resposta.
+TOQUE DESTA VEZ: ${toque}
+Regras do follow-up: traga algo NOVO e útil (nunca "só passando para saber"), não repita frases já enviadas, curta, termine com uma pergunta fácil de responder.
+Última fala do lead: "${mensagemCliente}"` : `ÚLTIMA MENSAGEM DO LEAD:
+"${mensagemCliente}"`}
 ${correcoes.length ? `\nCORREÇÕES RECENTES DO DR. WESLEY (prefira o estilo corrigido):\n${correcoes.map((c, i) => `${i + 1}. Original: "${c.original.slice(0, 400)}" → Corrigido: "${c.corrected.slice(0, 400)}"`).join('\n')}\n` : ''}
 Redija a PRÓXIMA mensagem da Iara para este lead, seguindo a função Vendas e o POP.
 Responda SOMENTE com um JSON, sem markdown:
@@ -209,14 +212,23 @@ Perfil atual: ${ficha?.perfil || '(nenhum)'}
 
 Responda SOMENTE um JSON:
 {"perfil": "até 8 linhas: como se comunica, quem decide, situação financeira percebida, cidade/cultura, motivo e desejo (com as palavras dele), medos e objeções (respondidas ou não)",
- "nota": "nota interna curta: o que funcionou e o que não funcionou, ganho estimado discutido e reação, próximo passo combinado, e uma 'Lição para a Iara'"}
-Não invente nada que não esteja na conversa.`;
+ "nota": "nota interna curta: o que funcionou e o que não funcionou, ganho estimado discutido e reação, próximo passo combinado, e uma 'Lição para a Iara'",
+ "qualificacao": {
+   "valorEstimado": número em reais do que está em jogo (Proagro/seguro a receber, dívida a revisar, valor da terra) SÓ se o lead disse, senão null,
+   "urgencia": "alta" (leilão marcado, prescrição/prazo próximo, honorários potenciais acima de R$ 30 mil) | "media" | "baixa" | null,
+   "urgenciaMotivo": "por quê, em poucas palavras",
+   "encaixe": "sim" | "nao" | "indefinido" (se o caso cabe nas regras de viabilidade do produto: prazos, valores mínimos),
+   "encaixeMotivo": "por quê",
+   "dataLeilao": "AAAA-MM-DD" se o lead disse a data do leilão, senão null,
+   "produto": um destes ids se estiver claro: proagro_negado, proagro_demorando, seguro_agricola_de_lavoura, seguro_de_maquinas, revisao_de_cedulas_rurais, defesa_de_imovel_rural_em_leilao; senão null }}
+Não invente nada que não esteja na conversa. Hoje é ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.`;
   try {
-    const r = await criarMensagem('rapido', { max_tokens: 900, essencial: false, messages: [{ role: 'user', content: pedido }] });
+    const r = await criarMensagem('rapido', { max_tokens: 1400, essencial: false, messages: [{ role: 'user', content: pedido }] });
     const b = r.content[0];
     const j = JSON.parse(((b && b.type === 'text' ? b.text : '').match(/\{[\s\S]*\}/) || ['{}'])[0]);
     if (j.perfil) await registrarNaFicha(phone, { tipo: 'perfil', perfil: j.perfil });
     if (j.nota) await registrarNaFicha(phone, { tipo: 'nota_iara', titulo: 'Nota da Iara', detalhe: j.nota });
+    if (j.qualificacao && typeof j.qualificacao === 'object') await registrarNaFicha(phone, { tipo: 'qualificacao', qualificacao: j.qualificacao });
   } catch (err) { console.error('[vendas] perfil/nota:', (err as Error).message); }
 }
 

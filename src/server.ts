@@ -262,6 +262,13 @@ cron.schedule('0 3 * * *', () => {
 }, { timezone: TZ });
 
 // A cada 10 min: vigia (Waspeed, recebimento de mensagens, CRM)
+// Cadências de follow-up de leads (5.1): só agem com a função Vendas LIGADA
+cron.schedule('20 * * * *', () => {
+  import('./vendas/cadencia').then(({ rodarCadencias }) => rodarCadencias())
+    .then(r => { if (r.enviados) console.log(`[cadencia] ${r.enviados} toque(s) enviado(s) de ${r.analisados} leads`); })
+    .catch(err => console.error('[cadencia] erro:', err));
+}, { timezone: 'America/Sao_Paulo' });
+
 cron.schedule('*/10 * * * *', () => {
   import('./cron/monitor').then(m => m.executarMonitor()).catch(err => console.error('[monitor] erro:', err));
 }, { timezone: TZ });
