@@ -125,6 +125,7 @@
   </style>
 </head>
 <body>
+<a href="/logout" style="position:fixed;top:8px;right:12px;z-index:9999;font:13px system-ui;color:#555;background:#fff;padding:4px 10px;border-radius:6px;box-shadow:0 1px 4px #0002;text-decoration:none">Sair</a>
 
 <header>
   <div class="status-dot" id="conn-dot" style="background:var(--red)"></div>
@@ -350,7 +351,19 @@
 </div>
 
 <script>
+  // Sessão vencida ou sem login: qualquer chamada recusada leva à tela de entrada
+  (function () {
+    const fetchOriginal = window.fetch;
+    window.fetch = async function () {
+      const r = await fetchOriginal.apply(this, arguments);
+      if (r.status === 401) location.href = '/login?next=' + encodeURIComponent(location.pathname);
+      return r;
+    };
+  })();
   const socket = io();
+  socket.on('connect_error', (err) => {
+    if (String(err && err.message).includes('login')) location.href = '/login?next=' + encodeURIComponent(location.pathname);
+  });
   let activePhone = null;
   let conversations = {};
   let pendingApprovals = [];

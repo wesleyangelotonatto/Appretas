@@ -29,7 +29,7 @@ async function avisar(texto: string, viaWhatsApp: boolean) {
   if (!viaWhatsApp) return;
   try {
     const { sendMessage } = await import('../responder/send');
-    await sendMessage(PHONE_WESLEY(), `⚠️ Aviso do sistema: ${texto}`, { assinar: false, rotulo: 'aviso de sistema' });
+    await sendMessage(PHONE_WESLEY(), `⚠️ Aviso do sistema: ${texto}`, { assinar: false, rotulo: 'aviso de sistema', interno: true });
   } catch (err) { console.error('[monitor] não consegui avisar pelo WhatsApp:', err); }
 }
 
@@ -94,6 +94,13 @@ export async function executarMonitor(): Promise<StatusSistema> {
     if (t.ok && pend) drive.reenviarPendentes().then(r => r.enviados && console.log(`[monitor] ${r.enviados} documento(s) reenviado(s) ao Drive`)).catch(() => {});
   }
 
+  // Rotinas que precisam ter rodado hoje: relatório das 06h (confere após 06h40) e backup das 03h (após 03h40)
+  const rotinas = verificarRotinas();
+  for (const r of rotinas) {
+    verificacoes[r.nome] = { ok: r.ok, detalhe: r.detalhe };
+    await registrar(r.nome, r.ok, r.detalhe, r.rotulo, wa.ok);
+  }
+
   const crm = await verificarCRM();
   if (crm) {
     verificacoes.crm = crm;
@@ -102,4 +109,28 @@ export async function executarMonitor(): Promise<StatusSistema> {
 
   ultimoStatus = { ok: Object.values(verificacoes).every(v => v.ok), verificacoes, ultimoEventoWebhookMin: minutosSilencio };
   return ultimoStatus;
+}
+
+// Hora atual em São Paulo (minutos desde a meia-noite) e o início do dia em epoch
+function agoraSaoPaulo(): { minutos: number; inicioDiaMs: number } {
+  const p = new Intl.DateTimeFormat('en-US', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo', hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(new Date());
+  const h = parseInt(p.find(x => x.type === 'hour')?.value || '0', 10) % 24;
+  const m = parseInt(p.find(x => x.type === 'minute')?.value || '0', 10);
+  const minutos = h * 60 + m;
+  return { minutos, inicioDiaMs: Date.now() - minutos * 60000 - (new Date().getSeconds() * 1000) };
+}
+
+function verificarRotinas(): Array<{ nome: string; rotulo: string; ok: boolean; detalhe: string }> {
+  const { minutos, inicioDiaMs } = agoraSaoPaulo();
+  let getSetting: (k: string) => string | null = () => null;
+  try { getSetting = require('../memory/db').getSetting; } catch { /* sem banco */ }
+  const lista: Array<{ nome: string; rotulo: string; chave: string; aPartirDe: number; hora: number }> = [
+    { nome: 'rotina_manha', rotulo: 'O relatório diário das 06h', chave: 'rotina_manha_em', aPartirDe: 6 * 60 + 40, hora: 6 * 60 },
+    { nome: 'rotina_backup', rotulo: 'O backup diário das 03h', chave: 'rotina_backup_em', aPartirDe: 3 * 60 + 40, hora: 3 * 60 },
+  ];
+  return lista.filter(r => minutos >= r.aPartirDe).map(r => {
+    const ultima = parseInt(getSetting(r.chave) || '0', 10);
+    const ok = ultima >= inicioDiaMs + r.hora * 60000 - 5 * 60000;
+    return { nome: r.nome, rotulo: r.rotulo, ok, detalhe: ok ? 'rodou hoje' : 'não rodou hoje' };
+  });
 }

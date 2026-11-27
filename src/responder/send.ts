@@ -94,14 +94,17 @@ function interceptadoParaCalibragem(phone: string, texto: string, rotulo: string
 export async function sendMessage(
   phone: string,
   text: string,
-  opts: { assinar?: boolean; rotulo?: string } = {}
+  opts: { assinar?: boolean; rotulo?: string; interno?: boolean } = {}
 ): Promise<ResultadoEnvio> {
   const corpo = opts.assinar === false ? text : assinarComoIara(text);
-  if (sistemaPausado()) {
+  // Avisos internos ao Wesley (relatório diário, alertas do sistema, agendamentos)
+  // não são atendimento a cliente: a pausa e a calibragem não os bloqueiam
+  const interno = opts.interno === true;
+  if (!interno && sistemaPausado()) {
     console.log(`[send] BLOQUEADO (sistema pausado) — mensagem NÃO enviada para ${phone}`);
     return { status: 'bloqueado', corpo };
   }
-  if (interceptadoParaCalibragem(phone, corpo, 'mensagem')) return { status: 'calibragem', corpo };
+  if (!interno && interceptadoParaCalibragem(phone, corpo, 'mensagem')) return { status: 'calibragem', corpo };
   // Segunda barreira contra duplicidade: a Iara nunca repete a mesma mensagem
   // para o mesmo contato em poucos minutos — se isso acontece é defeito, não
   // intenção. Não vale para envios do Wesley, que pode repetir o que quiser.

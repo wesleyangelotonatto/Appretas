@@ -109,7 +109,7 @@ Responda APENAS com JSON válido:
 
   // 4. Notifica o agendador eletrônico
   try {
-    await sendMessage(WESLEY_NUMERO, `Agendar compromisso com ${name} em ${dateLabel}`, { assinar: false });
+    await sendMessage(WESLEY_NUMERO, `Agendar compromisso com ${name} em ${dateLabel}`, { assinar: false, interno: true });
   } catch (err) {
     console.error('[agenda] erro ao notificar agendador:', err);
   }

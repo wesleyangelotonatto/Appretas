@@ -21,6 +21,7 @@ function alertar(mensagem: string) {
 }
 
 export async function executarBackup(enviarParaDrive = true): Promise<ResultadoBackup> {
+  try { require('../memory/db').setSetting('rotina_backup_em', String(Date.now())); } catch { /* ignora */ }
   const dataStr = new Date().toLocaleDateString('sv-SE', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' });
   fs.mkdirSync(DIR_BACKUP, { recursive: true });
   const copia = path.join(DIR_BACKUP, `iara-${dataStr}.db`);

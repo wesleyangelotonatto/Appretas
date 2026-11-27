@@ -284,7 +284,7 @@ export async function cronRelatorioWesley(periodo: PeriodoDia = diaAnteriorSaoPa
   const texto = partes.join('\n');
 
   try {
-    const r = await sendMessage(PHONE_WESLEY, texto, { assinar: false, rotulo: 'relatório diário' });
+    const r = await sendMessage(PHONE_WESLEY, texto, { assinar: false, rotulo: 'relatório diário', interno: true });
     if (r.status === 'enviado' || r.status === 'na_fila') {
       console.log(`[cron-relatorio] relatório ${r.status} — ${grupoCliente.length} p/ Wesley, ${grupoIara.length} p/ retorno cliente, ${grupoWesley.length} encerradas`);
     } else {
@@ -300,6 +300,7 @@ export async function cronRelatorioWesley(periodo: PeriodoDia = diaAnteriorSaoPa
 
 // Rotina das 06h: resumos do dia anterior e, em seguida, o relatório (ordem garantida)
 export async function cronDiarioManha(): Promise<void> {
+  import('../memory/db').then(({ setSetting }) => setSetting('rotina_manha_em', String(Date.now()))).catch(() => {});
   const periodo = diaAnteriorSaoPaulo();
   try { await cronResumosDiarios(periodo); }
   catch (err) { console.error('[cron-manha] erro nos resumos:', err); }

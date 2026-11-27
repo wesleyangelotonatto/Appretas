@@ -1,4 +1,5 @@
 import express from 'express';
+import { exigirLogin, registrarRotasLogin, usuarioDoCookie } from './auth/painel';
 import http from 'http';
 import { Server as SocketIO } from 'socket.io';
 import cors from 'cors';
@@ -21,11 +22,16 @@ const PORT = process.env.PORT || 3000;
 export const app = express();
 export const server = http.createServer(app);
 export const io = new SocketIO(server, {
-  cors: { origin: '*' }
+  cors: { origin: false }
 });
 
-app.use(cors());
+// Só o próprio painel usa a API pelo navegador: sem liberar outros sites
+app.use(cors({ origin: false }));
 app.use(express.json({ limit: '200mb' }));
+// Login do painel (login único com o CRM). Webhook, /health, /status e a reconexão
+// do Google ficam públicos; todo o resto exige sessão.
+registrarRotasLogin(app);
+app.use(exigirLogin);
 // O painel é um arquivo só, e o navegador o guardava em cache: toda mudança de
 // tela exigia Ctrl+F5 para aparecer, o que já causou confusão (botão novo
 // publicado e invisível na tela). Agora o HTML é sempre revalidado.
@@ -182,6 +188,12 @@ app.get('/health', (_req, res) => res.json({
 
 app.get('/', (_req, res) => {
   res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// Socket.IO: só aceita o painel com sessão válida
+io.use((socket, next) => {
+  if (usuarioDoCookie(socket.handshake.headers.cookie)) return next();
+  next(new Error('login necessário'));
 });
 
 // Socket.IO: conexão do painel
