@@ -283,6 +283,9 @@ export async function initDb(): Promise<void> {
   garantirColuna('janelas_resposta', 'minutos_espera', 'INTEGER DEFAULT 30');
 
   limparNomesContaminados();
+  // Busca sem acento em mensagens, lições e resumos (carga inicial só na primeira vez)
+  try { (await import('./busca')).criarIndicesBusca(); }
+  catch (err) { console.error('[busca] falha ao criar índices:', (err as Error).message); }
   console.log('[db] banco inicializado:', DB_PATH);
 }
 

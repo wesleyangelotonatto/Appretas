@@ -638,6 +638,15 @@ commandRouter.get('/crm-ficha/:phone', async (req, res) => {
   res.status(f ? 200 : 502).json(f ?? { erro: 'CRM não respondeu' });
 });
 
+commandRouter.get('/buscar', async (req, res) => {
+  const { buscarConversas } = await import('../memory/busca');
+  const q = String(req.query.q || '');
+  const dia = (s: unknown, fim: boolean) => /^\d{4}-\d{2}-\d{2}$/.test(String(s)) ? Date.parse(String(s) + (fim ? 'T23:59:59-03:00' : 'T00:00:00-03:00')) : undefined;
+  try {
+    res.json(buscarConversas(q, { phone: req.query.phone ? String(req.query.phone) : undefined, desde: dia(req.query.de, false), ate: dia(req.query.ate, true), limite: Number(req.query.limite) || 30 }));
+  } catch (err) { res.status(400).json({ erro: 'Busca inválida: ' + (err as Error).message }); }
+});
+
 commandRouter.get('/custo-ia', async (_req, res) => {
   const { usoIAPorDia } = await import('../memory/db');
   const { custoEstimado, modeloDa } = await import('../ia');
