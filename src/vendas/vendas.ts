@@ -140,12 +140,15 @@ export async function reprocessarConversas(limite = 10, dias = 60): Promise<{ ge
   const { tetoEstourado } = await import('../ia');
   const db = getDb();
   const desde = Math.floor(Date.now() / 1000) - dias * 86400;
-  const sessoes = db.prepare(`SELECT phone, name FROM sessions WHERE type = 'LEAD_NOVO' AND phone NOT IN (SELECT phone FROM vendas_comparacao)
-    AND phone IN (SELECT phone FROM messages WHERE created_at > ?) LIMIT ?`).all(desde, limite * 3) as any[];
+  const sessoes = db.prepare(`SELECT phone, name FROM sessions WHERE phone NOT IN (SELECT phone FROM vendas_comparacao)
+    AND phone IN (SELECT phone FROM messages WHERE created_at > ? AND role = 'client') ORDER BY updated_at DESC LIMIT ?`).all(desde, limite * 15) as any[];
   let gerados = 0, pulados = 0, erros = 0;
   for (const s of sessoes) {
     if (gerados >= limite) break;
     if (await tetoEstourado()) break;
+    // Só quem é lead pelo CRM (etapa do funil 01–13 exceto 11, ou anúncio)
+    const ficha = await fichaDoCRM(s.phone);
+    if (!ficha || !ehDaFuncaoVendas(ficha)) { pulados++; continue; }
     const msgs = db.prepare('SELECT role, body, created_at FROM messages WHERE phone = ? ORDER BY created_at').all(s.phone) as any[];
     // Último ponto em que o lead falou e alguém do escritório respondeu em seguida
     // (ignora eco: resposta igual ao que o lead disse, ou vazia)
