@@ -99,6 +99,20 @@ Responda APENAS com JSON válido:
     console.error('[agenda] erro ao salvar no Calendar:', err);
   }
 
+  // 1b. Grava na agenda do CRM (decisão de 26/11); o CRM move o lead para "03 Agendado"
+  try {
+    const url = process.env.CRM_URL, chave = process.env.CRM_API_KEY;
+    if (url && chave) {
+      const r = await fetch(url.replace(/\/$/, '') + '/api/integracao/agenda', {
+        method: 'POST', headers: { 'x-api-key': chave, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tel: phone, nome: name, inicio: info.dateIso, mensagem: body }), signal: AbortSignal.timeout(20000),
+      });
+      if (!r.ok) console.error('[agenda] CRM recusou o agendamento:', r.status, await r.text());
+    }
+  } catch (err) {
+    console.error('[agenda] erro ao gravar na agenda do CRM:', err);
+  }
+
   // 2. Salva no histórico SQLite do contato
   const nota = `[Agendamento] Atendimento com ${name} para ${dateLabel}`;
   saveMessage(phone, 'iara', nota);
