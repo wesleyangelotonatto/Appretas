@@ -65,6 +65,14 @@ const ENCERRAMENTOS_RE = [
 
 const CASE_TITLE_KEYWORDS = /processo|requerimento|apresentação|espólio|execução|embargos|ação\b|mandado|recurso|apelação|inventário|cumprimento de sentença|habilitação/i;
 
+// Termos do agro que a transcrição de áudio costuma ouvir errado
+export function corrigirTranscricao(t: string): string {
+  return String(t || '')
+    .replace(/\bpro[\s-]?[áa]gua\b/gi, 'Proagro').replace(/\bpro[\s-]?agra\b/gi, 'Proagro').replace(/\bpro[\s-]?agr[oô]\b/gi, 'Proagro')
+    .replace(/\bsicred\b/gi, 'Sicredi').replace(/\bsi[\s-]?coob\b/gi, 'Sicoob').replace(/\bcre[\s-]?sol\b/gi, 'Cresol')
+    .replace(/\bc[ée]dula\s+rural\b/gi, 'cédula rural').replace(/\bba[\s-]?cen\b/gi, 'Bacen');
+}
+
 // Extrai o nome que a pessoa diz na mensagem. Devolve só nomes com cara de nome
 // (1 a 3 palavras com inicial maiúscula), para não pegar "sou eu" ou "aqui é do banco"
 export function nomeNaMensagem(texto: string): string | null {
@@ -167,7 +175,7 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
         console.log(`[orchestrator] áudio base64 recebido, tamanho: ${base64.length}, primeiros bytes (hex): ${primeirosBytes}`);
       }
       if (base64 || mediaUrl) {
-        textBody = await transcribeAudio(mediaUrl, base64);
+        textBody = corrigirTranscricao(await transcribeAudio(mediaUrl, base64));
         io?.emit('transcription', { phone, original: mediaUrl || '[base64]', transcribed: textBody });
         console.log(`[orchestrator] áudio transcrito para ${phone}: "${textBody.slice(0, 100)}"`);
       } else {
