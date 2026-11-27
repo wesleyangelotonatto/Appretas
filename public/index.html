@@ -437,7 +437,7 @@
     });
     list.innerHTML = sorted.map(([phone, conv]) => `
       <div class="conv-item ${activePhone === phone ? 'active' : ''}" onclick="selectConv(${JSON.stringify(phone).replace(/"/g, '&quot;')})">
-        <div class="name">${escHtml(conv.name||phone)}<span class="type-badge type-${conv.type}">${conv.type.replace('_',' ')}</span></div>
+        <div class="name">${escHtml(nomeENumero(conv.name, phone))}<span class="type-badge type-${conv.type}">${conv.type.replace('_',' ')}</span></div>
         <div class="phone">${escHtml(phone)}</div>
         <div class="last-msg">${escHtml((conv.messages[conv.messages.length-1]?.body||'').substring(0,60))}</div>
         <div class="status-indicator ${conv.status}">${statusLabel(conv.status)}</div>
@@ -461,7 +461,7 @@
   function updateChatHeader() {
     const conv = conversations[activePhone];
     if (!conv) return;
-    document.getElementById('chat-name').textContent = conv.name || activePhone;
+    document.getElementById('chat-name').textContent = nomeENumero(conv.name, activePhone);
     document.getElementById('chat-phone').textContent = activePhone + (conv.processes?.length ? ` • Processos: ${conv.processes.join(', ')}` : '');
     const btn = document.getElementById('btn-takeover');
     btn.textContent = conv.status === 'takeover' ? 'Devolver a IA' : 'Assumir';
@@ -522,7 +522,7 @@
     list.innerHTML = filtered.map(a => `
       <div class="approval-item" id="apr-${a.id}">
         <div style="font-size:12px;margin-bottom:4px;">
-          <b>${escHtml(a.nome || '(sem nome cadastrado)')}</b>
+          <b>${escHtml(a.nome && a.nome !== a.phone ? a.nome : 'Sem nome identificado')}</b>
           <span style="color:var(--text-muted);font-size:11px;"> — ${escHtml(a.phone)}</span>
           ${a.tipo_contato ? `<span class="badge" style="margin-left:6px;font-size:9px;">${escHtml(a.tipo_contato)}</span>` : ''}
         </div>
@@ -562,6 +562,9 @@
     pendingApprovals = pendingApprovals.filter(a => a.id !== id);
     renderApprovals();
   }
+
+  // Nome e número juntos; sem nome, só o número
+  function nomeENumero(nome, fone) { return nome && nome !== fone && /[a-zà-ú]/i.test(nome) ? nome + ' · ' + fone : fone; }
 
   // Rascunho da função Vendas: mostra produto, regra do roteiro e etapa sugerida
   function ctxVendas(c) { try { const j = JSON.parse(c || ''); return j && j.funcao === 'vendas' ? j : null; } catch (e) { return null; } }

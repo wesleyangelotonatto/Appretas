@@ -1,0 +1,49 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Follow-up automático</title>
+<style>
+:root{--bg:#0f1419;--card:#1a2129;--borda:#2d3748;--txt:#e6e6e6;--mut:#a0aec0;--az:#63b3ed;--vd:#68d391;--vm:#fc8181}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;font-size:14px}
+header{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--borda);flex-wrap:wrap}header h1{font-size:18px;margin:0}
+a{color:var(--az);text-decoration:none}.mut{color:var(--mut);font-size:12px}main{max-width:900px;margin:0 auto;padding:16px}
+.bloco{background:var(--card);border:1px solid var(--borda);border-radius:10px;padding:14px;margin-bottom:12px}
+textarea,input{width:100%;background:var(--bg);color:var(--txt);border:1px solid var(--borda);border-radius:6px;padding:7px;font:inherit}
+textarea{min-height:60px}button{background:#3182ce;color:#fff;border:0;border-radius:6px;padding:9px 14px;cursor:pointer;font:inherit;margin:6px 6px 0 0}
+button.sec{background:#4a5568}.liga{font-size:16px;padding:12px 18px}.on{background:#276749}.off{background:#9b2c2c}
+.toque{display:grid;grid-template-columns:70px 1fr;gap:8px;margin:6px 0}label.chk{display:inline-flex;gap:6px;align-items:center;margin:4px 14px 4px 0}
+details summary{cursor:pointer;font-weight:600;padding:6px 0}
+</style></head><body>
+<header><a href="/">← Painel da Iara</a><h1>Follow-up automático de leads</h1><span style="flex:1"></span><a href="/manual.html#followup">Como funciona</a></header>
+<main>
+<div class="bloco"><div id="estado">Carregando…</div>
+<button id="btnLiga" class="liga" onclick="ligar()">…</button>
+<p class="mut">Quando ligado, a Iara manda sozinha as mensagens abaixo para leads que <b>pararam de responder</b>, só das 8h às 21h, no máximo 20 por hora e com pelo menos 20 horas entre uma mensagem e outra para o mesmo lead. Se o lead responder, a sequência recomeça do zero. A pausa geral da Iara também segura o follow-up.</p></div>
+<div class="bloco"><h3 style="margin-top:0">Para quais etapas</h3><div id="etapas"></div>
+<label class="mut" style="display:block;margin-top:8px">Só leads que conversaram nos últimos <input id="dias" type="number" min="1" max="180" style="width:80px;display:inline-block"> dias</label>
+<button onclick="salvar()">Salvar etapas</button></div>
+<div class="bloco"><h3 style="margin-top:0">Textos (frases prontas)</h3>
+<p class="mut">Lacunas entre chaves são completadas pela Iara com o que está na conversa: {nome}, {produto}, {documento}, {ponto}, {data}. Se ela não tiver a informação, a mensagem vai para a sua aprovação em vez de sair.</p>
+<div id="textos"></div><button onclick="salvar(true)">Salvar textos</button><button class="sec" onclick="restaurar()">Voltar aos textos do plano</button> <span id="msg" class="mut"></span></div>
+<div class="bloco"><h3 style="margin-top:0">Últimas mensagens de follow-up</h3><div id="ult" class="mut"></div></div>
+</main>
+<script>
+var D=null;
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+async function api(u,b){var r=await fetch(u,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});if(r.status===401){location.href="/login";throw 0;}return r.json();}
+async function carregar(){D=await api("/command/followup");var c=D.config;
+  document.getElementById("estado").innerHTML='Situação: <b style="color:'+(c.ativo?'var(--vd)':'var(--vm)')+'">'+(c.ativo?'LIGADO':'DESLIGADO')+'</b>'+(D.alterado?' <span class="mut">· alterado em '+new Date(D.alterado.em).toLocaleString("pt-BR")+' por '+esc(D.alterado.quem)+'</span>':'');
+  var b=document.getElementById("btnLiga");b.textContent=c.ativo?"Desligar follow-up automático":"Ligar follow-up automático";b.className="liga "+(c.ativo?"off":"on");
+  document.getElementById("etapas").innerHTML=Object.keys(D.rotulos).sort().map(function(e){return '<label class="chk"><input type="checkbox" data-e="'+e+'"'+(c.etapas[e]?" checked":"")+'> '+esc(D.rotulos[e])+'</label>';}).join("");
+  document.getElementById("dias").value=c.diasConversa;
+  document.getElementById("textos").innerHTML=Object.keys(D.rotulos).sort().map(function(e){return '<details'+(c.etapas[e]?" open":"")+'><summary>'+esc(D.rotulos[e])+' ('+(c.textos[e]||[]).length+' mensagens)</summary>'+
+    (c.textos[e]||[]).map(function(t,i){return '<div class="toque"><div><span class="mut">Dia</span><input type="number" min="0" data-e="'+e+'" data-i="'+i+'" data-c="dia" value="'+t.dia+'"></div><div><textarea data-e="'+e+'" data-i="'+i+'" data-c="texto">'+esc(t.texto)+'</textarea>'+(t.depois?'<div class="mut">Depois desta mensagem, sem resposta: sugere a etapa '+esc(t.depois)+'</div>':'')+'</div></div>';}).join("")+'</details>';}).join("");
+  document.getElementById("ult").innerHTML=D.ultimos.length?D.ultimos.map(function(u){return esc(new Date(u.enviado_em*1000).toLocaleString("pt-BR"))+' · '+esc(u.phone)+' · '+esc(D.rotulos[u.cadencia]||u.cadencia)+' nº '+(u.indice+1)+' · '+esc(u.status);}).join("<br>"):"Nenhuma ainda.";}
+function lerTextos(){var t={};document.querySelectorAll("#textos [data-e]").forEach(function(el){var e=el.dataset.e,i=+el.dataset.i;t[e]=t[e]||[];t[e][i]=t[e][i]||{};t[e][i][el.dataset.c]=el.dataset.c==="dia"?+el.value:el.value;});return t;}
+async function salvar(comTextos){var et={};document.querySelectorAll("#etapas input").forEach(function(c){et[c.dataset.e]=c.checked;});
+  var b={etapas:et,diasConversa:+document.getElementById("dias").value};if(comTextos)b.textos=lerTextos();
+  await api("/command/followup",b);document.getElementById("msg").textContent="Salvo.";carregar();}
+async function ligar(){var on=!D.config.ativo;
+  if(on&&!confirm("Ligar o follow-up automático? A Iara vai mandar as mensagens sozinha para os leads das etapas marcadas que pararam de responder."))return;
+  await api("/command/followup",{ativo:on});carregar();}
+async function restaurar(){if(!confirm("Voltar todos os textos aos do plano?"))return;await api("/command/followup",{restaurarTextos:true});carregar();}
+carregar();
+</script></body></html>

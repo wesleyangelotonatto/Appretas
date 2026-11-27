@@ -262,7 +262,7 @@ cron.schedule('0 3 * * *', () => {
 }, { timezone: TZ });
 
 // A cada 10 min: vigia (Waspeed, recebimento de mensagens, CRM)
-// Cadências de follow-up de leads (5.1): só agem com a função Vendas LIGADA
+// Follow-up automático de leads (5.1): só age com o botão "Follow-up automático" ligado
 cron.schedule('20 * * * *', () => {
   import('./vendas/cadencia').then(({ rodarCadencias }) => rodarCadencias())
     .then(r => { if (r.enviados) console.log(`[cadencia] ${r.enviados} toque(s) enviado(s) de ${r.analisados} leads`); })

@@ -65,6 +65,15 @@ const ENCERRAMENTOS_RE = [
 
 const CASE_TITLE_KEYWORDS = /processo|requerimento|apresentação|espólio|execução|embargos|ação\b|mandado|recurso|apelação|inventário|cumprimento de sentença|habilitação/i;
 
+// Extrai o nome que a pessoa diz na mensagem. Devolve só nomes com cara de nome
+// (1 a 3 palavras com inicial maiúscula), para não pegar "sou eu" ou "aqui é do banco"
+export function nomeNaMensagem(texto: string): string | null {
+  const m = String(texto || '').match(/(?:meu nome (?:é|e)|me chamo|aqui (?:é|e) (?:o|a)|(?:eu )?sou (?:o|a))\s+([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+(?:\s+(?:d[aeo]s?\s+)?[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]+){0,2})/);
+  if (!m) return null;
+  const n = m[1].trim();
+  return /^(Dr|Doutor|Iara|Wesley|Banco|Cooperativa|Sicredi|Sicoob|Cresol)\b/i.test(n) ? null : n;
+}
+
 function isLikelyPersonName(name: string): boolean {
   if (!name) return false;
   const trimmed = name.trim();
@@ -500,7 +509,9 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // nome de sessão já validado anteriormente > nome de lookup (Trello/Sheets) só se parecer nome de pessoa >
     // número do telefone (nunca o título de um card do Trello)
     const lookupName = (contact as any)?.displayName || contact?.name || '';
-    const candidatos = [waName, session?.name, lookupName];
+    // Nome dito na conversa ("meu nome é…", "aqui é o…", "sou a…") quando ainda não há nome
+    const nomeDito = nomeNaMensagem(textBody);
+    const candidatos = [waName, session?.name, lookupName, nomeDito];
     const displayName = candidatos.find(n => isLikelyPersonName(n || '')) || phone;
 
     upsertSession(phone, {

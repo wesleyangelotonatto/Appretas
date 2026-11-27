@@ -699,6 +699,33 @@ commandRouter.get('/vendas/comparacoes', async (_req, res) => {
   const { listarComparacoes } = await import('../vendas/vendas');
   res.json({ comparacoes: listarComparacoes(100) });
 });
+// Follow-up automático de leads: liga/desliga, etapas e textos prontos
+commandRouter.get('/followup', async (_req, res) => {
+  const { configFollowup, ROTULO_ETAPA, TEXTOS_PADRAO } = await import('../vendas/cadencia');
+  const { getSetting, getDb } = await import('../memory/db');
+  let ultimos: any[] = [];
+  try { ultimos = getDb().prepare('SELECT phone, cadencia, indice, status, enviado_em FROM vendas_toques ORDER BY enviado_em DESC LIMIT 30').all(); } catch { /* sem toques */ }
+  res.json({ config: configFollowup(), rotulos: ROTULO_ETAPA, padrao: TEXTOS_PADRAO, alterado: JSON.parse(getSetting('followup_config_em') || 'null'), ultimos });
+});
+commandRouter.post('/followup', async (req, res) => {
+  const { salvarConfigFollowup, TEXTOS_PADRAO } = await import('../vendas/cadencia');
+  const b = req.body || {};
+  const c: any = {};
+  if (typeof b.ativo === 'boolean') c.ativo = b.ativo;
+  if (b.etapas && typeof b.etapas === 'object') c.etapas = Object.fromEntries(Object.keys(TEXTOS_PADRAO).map(e => [e, !!b.etapas[e]]));
+  if (b.diasConversa) c.diasConversa = Math.max(1, Math.min(180, Number(b.diasConversa) || 30));
+  if (b.textos && typeof b.textos === 'object') {
+    c.textos = {};
+    for (const e of Object.keys(b.textos)) {
+      if (!TEXTOS_PADRAO[e] || !Array.isArray(b.textos[e])) continue;
+      c.textos[e] = b.textos[e].map((t: any, i: number) => ({ dia: Math.max(0, Number(t.dia) || TEXTOS_PADRAO[e][i]?.dia || 1), texto: String(t.texto || '').slice(0, 1000), depois: TEXTOS_PADRAO[e][i]?.depois }))
+        .filter((t: any) => t.texto.trim());
+    }
+  }
+  if (b.restaurarTextos === true) c.textos = TEXTOS_PADRAO;
+  res.json({ ok: true, config: salvarConfigFollowup(c, (req as any).usuario?.login || 'painel') });
+});
+
 commandRouter.get('/vendas/placar', async (_req, res) => {
   const { getDb } = await import('../memory/db');
   const linhas = getDb().prepare("SELECT tipo, contexto, texto_original, texto_final FROM treinamento WHERE tipo IN ('vendas','vendas_descartado')").all() as any[];
