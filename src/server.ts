@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import express from 'express';
 import { exigirLogin, registrarRotasLogin, usuarioDoCookie } from './auth/painel';
 import http from 'http';
@@ -178,6 +179,20 @@ app.get('/status', async (_req, res) => {
   const { statusAtual } = await import('./cron/monitor');
   const st = statusAtual();
   res.status(st.ok ? 200 : 503).json(st);
+});
+
+// Integração com o CRM (chave CRM_API_KEY): gasto de IA do dia para o teto e o painel de custo
+app.get('/integracao/uso-ia', async (req, res) => {
+  const chave = process.env.CRM_API_KEY || '';
+  const enviada = String(req.headers['x-api-key'] || '');
+  if (!chave || enviada.length !== chave.length || !crypto.timingSafeEqual(Buffer.from(enviada), Buffer.from(chave))) {
+    return res.status(401).json({ erro: 'chave inválida' });
+  }
+  const dia = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.dia)) ? String(req.query.dia)
+    : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const { custoDoDia } = await import('./ia');
+  const { usoIAPorDia } = await import('./memory/db');
+  res.json({ dia, custo: Number((await custoDoDia(dia)).toFixed(4)), linhas: usoIAPorDia(Number(req.query.dias) || 1) });
 });
 
 app.get('/health', (_req, res) => res.json({

@@ -46,9 +46,29 @@ interface Pedido {
   messages: Anthropic.MessageParam[];
   // Guarda a parte fixa (system) em cache: nas chamadas seguintes ela custa ~10%.
   cacheSystem?: boolean;
+  // false = função não essencial (subagentes, resumos extras): não roda com o teto
+  // diário de gasto estourado. O atendimento ao cliente é sempre essencial.
+  essencial?: boolean;
+}
+
+// Teto diário de gasto (Iara + CRM somados), calculado pelo CRM. Consultado no
+// máximo a cada 5 min; se o CRM não responder, vale a última situação conhecida.
+let tetoCache = { em: 0, estourado: false };
+export async function tetoEstourado(): Promise<boolean> {
+  if (Date.now() - tetoCache.em < 5 * 60 * 1000) return tetoCache.estourado;
+  const url = process.env.CRM_URL, chave = process.env.CRM_API_KEY;
+  if (!url || !chave) return false;
+  try {
+    const r = await fetch(url.replace(/\/$/, '') + '/api/ia/teto', { headers: { 'x-api-key': chave }, signal: AbortSignal.timeout(8000) });
+    if (r.ok) tetoCache = { em: Date.now(), estourado: !!((await r.json()) as { estourado?: boolean }).estourado };
+  } catch { /* mantém o último valor */ }
+  return tetoCache.estourado;
 }
 
 export async function criarMensagem(funcao: FuncaoIA, pedido: Pedido): Promise<Anthropic.Message> {
+  if (pedido.essencial === false && await tetoEstourado()) {
+    throw new Error('Teto diário de IA atingido: função não essencial desligada até amanhã');
+  }
   const modelo = modeloDa(funcao);
   const system = pedido.system
     ? (pedido.cacheSystem
@@ -112,4 +132,11 @@ export function custoEstimado(modelo: string, entrada: number, saida: number, ca
   const [, pe, ps] = p;
   const fatorEscrita = CACHE_TTL === '1h' ? 2 : 1.25;
   return (entrada * pe + cacheLeitura * pe * 0.1 + cacheEscrita * pe * fatorEscrita + saida * ps) / 1e6;
+}
+
+// Custo estimado de um dia (AAAA-MM-DD, fuso de São Paulo), para o teto e o painel único
+export async function custoDoDia(dia: string): Promise<number> {
+  const { usoIAPorDia } = await import('./memory/db');
+  return usoIAPorDia(3).filter(l => l.dia === dia)
+    .reduce((t, l) => t + custoEstimado(l.modelo, l.entrada, l.saida, l.cache_leitura, l.cache_escrita), 0);
 }

@@ -9,7 +9,7 @@ import express, { Request, Response, NextFunction } from 'express';
 
 const COOKIE = 'iara_sessao';
 const DURACAO_MS = 12 * 60 * 60 * 1000;
-const PUBLICAS = ['/webhook', '/health', '/status', '/google/', '/login', '/logout', '/favicon.ico'];
+const PUBLICAS = ['/webhook', '/health', '/status', '/google/', '/login', '/logout', '/favicon.ico', '/integracao/'];
 
 function segredo(): string {
   return process.env.IARA_SESSION_SECRET || crypto.createHash('sha256').update('iara:' + (process.env.CRM_API_KEY || process.env.WASPEED_TOKEN || 'x')).digest('hex');
