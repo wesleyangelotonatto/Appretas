@@ -84,6 +84,16 @@ export async function executarMonitor(): Promise<StatusSistema> {
   verificacoes.webhook = { ok: silencioOk, detalhe: `último evento há ${minutosSilencio} min` };
   await registrar('webhook', silencioOk, `nenhuma mensagem do WhatsApp chega há ${minutosSilencio} minutos — confira se o Waspeed está conectado`, 'O recebimento de mensagens do WhatsApp', wa.ok);
 
+  // Google Drive: autorização válida e acesso à pasta raiz; se voltou, reenvia o que ficou guardado
+  if (process.env.GOOGLE_OAUTH_CLIENT_ID) {
+    const drive = await import('../integrations/drive');
+    const t = await drive.testarDrive();
+    const pend = drive.contarPendentes();
+    verificacoes.drive = { ok: t.ok, detalhe: t.ok ? `ok${pend ? `, ${pend} documento(s) aguardando` : ''}` : t.erro };
+    await registrar('drive', t.ok, `${t.erro} — os documentos ficam guardados e sobem quando voltar`, 'O Google Drive', wa.ok);
+    if (t.ok && pend) drive.reenviarPendentes().then(r => r.enviados && console.log(`[monitor] ${r.enviados} documento(s) reenviado(s) ao Drive`)).catch(() => {});
+  }
+
   const crm = await verificarCRM();
   if (crm) {
     verificacoes.crm = crm;

@@ -126,6 +126,46 @@ app.get('/api/situacao-atual', (_req, res) => {
   }
 });
 
+// ── Reconectar o Google Drive (link protegido por GOOGLE_CONECTAR_CHAVE) ──
+// O Wesley abre o link, entra com a conta Google do escritório, copia o endereço
+// da página para onde o Google o levar e cola aqui. A autorização fica salva no
+// banco, é repassada ao CRM e os documentos que não subiram são reenviados.
+function chaveConectarOk(chave: any): boolean {
+  const esperada = process.env.GOOGLE_CONECTAR_CHAVE || '';
+  return !!esperada && typeof chave === 'string' && chave.length === esperada.length &&
+    require('crypto').timingSafeEqual(Buffer.from(chave), Buffer.from(esperada));
+}
+const paginaGoogle = (corpo: string) => `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conectar Google Drive</title><style>body{font-family:system-ui,sans-serif;max-width:640px;margin:24px auto;padding:0 16px;line-height:1.5}a.b,button{display:inline-block;background:#1a73e8;color:#fff;padding:12px 18px;border-radius:8px;text-decoration:none;border:0;font-size:16px}textarea{width:100%;height:90px;font-size:14px}.ok{color:#137333}.erro{color:#c5221f}</style></head><body>${corpo}</body></html>`;
+
+app.get('/google/conectar', async (req, res) => {
+  if (!chaveConectarOk(req.query.chave)) return res.status(404).send('Não encontrado');
+  const { urlAutorizacao } = await import('./integrations/drive');
+  const chave = String(req.query.chave);
+  res.send(paginaGoogle(`<h1>Conectar o Google Drive</h1>
+<p><b>Passo 1.</b> Toque no botão, entre com a conta Google do escritório e clique em <b>Permitir</b>.</p>
+<p><a class="b" href="${urlAutorizacao()}" target="_blank" rel="noopener">Entrar com o Google</a></p>
+<p><b>Passo 2.</b> O Google vai abrir uma página chamada "OAuth 2.0 Playground". Não precisa mexer nela: copie o <b>endereço completo</b> que aparece na barra do navegador (começa com https://developers.google.com/oauthplayground/?code=…) e cole abaixo.</p>
+<form method="post" action="/google/conectar?chave=${encodeURIComponent(chave)}"><textarea name="codigo" required placeholder="Cole aqui o endereço copiado"></textarea><p><button type="submit">Concluir conexão</button></p></form>`));
+});
+
+app.post('/google/conectar', express.urlencoded({ extended: false }), async (req, res) => {
+  if (!chaveConectarOk(req.query.chave)) return res.status(404).send('Não encontrado');
+  const drive = await import('./integrations/drive');
+  const r = await drive.concluirAutorizacao(String(req.body?.codigo || ''));
+  if (!r.ok) return res.send(paginaGoogle(`<h1 class="erro">Não deu certo</h1><p>${String(r.erro).replace(/</g, '&lt;')}</p><p><a href="/google/conectar?chave=${encodeURIComponent(String(req.query.chave))}">Tentar de novo</a></p>`));
+  // Repassa ao CRM (mesma conta do Drive) e reenvia os documentos que ficaram para trás
+  let crm = 'não configurado';
+  if (process.env.CRM_URL && process.env.CRM_API_KEY) {
+    try {
+      const axios = (await import('axios')).default;
+      await axios.post(`${process.env.CRM_URL.replace(/\/$/, '')}/renovar-drive`, { token: r.refreshToken }, { headers: { 'x-api-key': process.env.CRM_API_KEY }, timeout: 15000 });
+      crm = 'atualizado';
+    } catch (err: any) { crm = `falhou (${err?.response?.status || err?.message})`; }
+  }
+  const pend = await drive.reenviarPendentes();
+  res.send(paginaGoogle(`<h1 class="ok">Google Drive conectado ✔</h1><p>A Iara voltou a salvar os documentos no Drive.</p><p>CRM: ${crm}.<br>Documentos que estavam aguardando: ${pend.enviados} enviado(s), ${pend.restantes} restante(s).</p>`));
+});
+
 // Estado do vigia para um monitor externo de disponibilidade (ex.: UptimeRobot):
 // responde 503 quando alguma verificação falhou
 app.get('/status', async (_req, res) => {

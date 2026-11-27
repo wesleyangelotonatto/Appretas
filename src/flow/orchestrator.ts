@@ -175,7 +175,8 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
           const driveLink = await saveDocument(phone, nomeCliente, nomeArquivo, buffer, mimetype || 'application/octet-stream');
           mediaUrl = driveLink || mediaUrl;
           textBody = body || `[Documento recebido: ${nomeArquivo}]`;
-          console.log(`[orchestrator] documento salvo no Drive para ${phone}: ${nomeArquivo} -> ${driveLink || '(sem link retornado)'}`);
+          if (driveLink) console.log(`[orchestrator] documento salvo no Drive para ${phone}: ${nomeArquivo} -> ${driveLink}`);
+          else console.warn(`[orchestrator] documento NÃO subiu ao Drive para ${phone}: ${nomeArquivo} — guardado para reenvio`);
         } catch (err) {
           console.error('[orchestrator] erro ao salvar documento no Drive:', err);
           textBody = body || `[Documento recebido: ${nomeArquivo} — falha ao salvar no Drive]`;
