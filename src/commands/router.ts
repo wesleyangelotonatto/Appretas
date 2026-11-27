@@ -379,16 +379,18 @@ commandRouter.post('/handback', (req, res) => {
 
 // POST /command/send — envia mensagem direta de Wesley
 commandRouter.post('/send', async (req, res) => {
-  const { phone, message } = req.body;
+  const { phone, message, assinarIara } = req.body;
   try {
-    await sendMessage(phone, message, { assinar: false });
+    // Mensagem escrita pelo Wesley (painel ou CRM): sai mesmo com as respostas automáticas pausadas
+    const r = await sendMessage(phone, message, { assinar: assinarIara === true, interno: true, rotulo: 'mensagem do escritório' });
+    if (r.status !== 'enviado' && r.status !== 'na_fila') return res.status(502).json({ ok: false, status: r.status, erro: 'A mensagem não saiu (' + r.status + ')' });
     // Em calibragem a mensagem não saiu (ficou registrada no banco de treinamento),
     // então não entra no histórico real como se o cliente a tivesse recebido
     if (modoCalibragem()) {
       return res.json({ ok: true, calibragem: true, aviso: 'Modo calibragem: nada foi enviado ao cliente' });
     }
-    saveMessage(phone, 'wesley', message);
-    req.app.locals.io?.emit('message', { phone, role: 'wesley', body: message, timestamp: Date.now() });
+    saveMessage(phone, assinarIara === true ? 'iara' : 'wesley', message);
+    req.app.locals.io?.emit('message', { phone, role: assinarIara === true ? 'iara' : 'wesley', body: message, timestamp: Date.now() });
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -396,6 +398,19 @@ commandRouter.post('/send', async (req, res) => {
 });
 
 // POST /command/send-document — envia documento ao contato
+// A Iara escreve uma mensagem a partir de uma instrução do Wesley (não envia: devolve o texto)
+commandRouter.post('/redigir', async (req, res) => {
+  const phone = String(req.body?.phone || ''), instrucao = String(req.body?.instrucao || '').slice(0, 1000);
+  if (!phone || !instrucao) return res.status(400).json({ erro: 'Informe o telefone e o que a Iara deve dizer' });
+  try {
+    const { getHistory } = await import('../memory/db');
+    const { draftResponse } = await import('../responder/claude');
+    const hist = getHistory(phone.replace(/\D/g, ''), 30).map((m: any) => ({ role: m.role, body: m.body }));
+    const texto = await draftResponse('DESCONHECIDO', '(mensagem iniciada pelo escritório)', JSON.stringify({ instrucaoDoDrWesley: instrucao, observacao: 'Escreva a mensagem que o Dr. Wesley pediu, para enviar a este contato agora, considerando a conversa.' }), 'N', hist);
+    res.json({ ok: true, texto: texto.replace(/^\u27E6incompleto\u27E7/, '') });
+  } catch (err) { res.status(500).json({ erro: String(err) }); }
+});
+
 commandRouter.post('/send-document', async (req: Request, res: Response) => {
   const { phone, url, caption } = req.body;
   if (!phone || !url) return res.status(400).json({ error: 'Informe phone e url' });
@@ -700,14 +715,14 @@ commandRouter.get('/vendas/comparacoes', async (_req, res) => {
   res.json({ comparacoes: listarComparacoes(100) });
 });
 // Follow-up automático de leads: liga/desliga, etapas e textos prontos
-commandRouter.get('/followup', async (_req, res) => {
+commandRouter.get('/followup-auto', async (_req, res) => {
   const { configFollowup, ROTULO_ETAPA, TEXTOS_PADRAO } = await import('../vendas/cadencia');
   const { getSetting, getDb } = await import('../memory/db');
   let ultimos: any[] = [];
   try { ultimos = getDb().prepare('SELECT phone, cadencia, indice, status, enviado_em FROM vendas_toques ORDER BY enviado_em DESC LIMIT 30').all(); } catch { /* sem toques */ }
   res.json({ config: configFollowup(), rotulos: ROTULO_ETAPA, padrao: TEXTOS_PADRAO, alterado: JSON.parse(getSetting('followup_config_em') || 'null'), ultimos });
 });
-commandRouter.post('/followup', async (req, res) => {
+commandRouter.post('/followup-auto', async (req, res) => {
   const { salvarConfigFollowup, TEXTOS_PADRAO } = await import('../vendas/cadencia');
   const b = req.body || {};
   const c: any = {};

@@ -30,7 +30,7 @@ details summary{cursor:pointer;font-weight:600;padding:6px 0}
 var D=null;
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 async function api(u,b){var r=await fetch(u,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});if(r.status===401){location.href="/login";throw 0;}return r.json();}
-async function carregar(){D=await api("/command/followup");var c=D.config;
+async function carregar(){D=await api("/command/followup-auto");var c=D.config;
   document.getElementById("estado").innerHTML='Situação: <b style="color:'+(c.ativo?'var(--vd)':'var(--vm)')+'">'+(c.ativo?'LIGADO':'DESLIGADO')+'</b>'+(D.alterado?' <span class="mut">· alterado em '+new Date(D.alterado.em).toLocaleString("pt-BR")+' por '+esc(D.alterado.quem)+'</span>':'');
   var b=document.getElementById("btnLiga");b.textContent=c.ativo?"Desligar follow-up automático":"Ligar follow-up automático";b.className="liga "+(c.ativo?"off":"on");
   document.getElementById("etapas").innerHTML=Object.keys(D.rotulos).sort().map(function(e){return '<label class="chk"><input type="checkbox" data-e="'+e+'"'+(c.etapas[e]?" checked":"")+'> '+esc(D.rotulos[e])+'</label>';}).join("");
@@ -41,10 +41,10 @@ async function carregar(){D=await api("/command/followup");var c=D.config;
 function lerTextos(){var t={};document.querySelectorAll("#textos [data-e]").forEach(function(el){var e=el.dataset.e,i=+el.dataset.i;t[e]=t[e]||[];t[e][i]=t[e][i]||{};t[e][i][el.dataset.c]=el.dataset.c==="dia"?+el.value:el.value;});return t;}
 async function salvar(comTextos){var et={};document.querySelectorAll("#etapas input").forEach(function(c){et[c.dataset.e]=c.checked;});
   var b={etapas:et,diasConversa:+document.getElementById("dias").value};if(comTextos)b.textos=lerTextos();
-  await api("/command/followup",b);document.getElementById("msg").textContent="Salvo.";carregar();}
+  await api("/command/followup-auto",b);document.getElementById("msg").textContent="Salvo.";carregar();}
 async function ligar(){var on=!D.config.ativo;
   if(on&&!confirm("Ligar o follow-up automático? A Iara vai mandar as mensagens sozinha para os leads das etapas marcadas que pararam de responder."))return;
-  await api("/command/followup",{ativo:on});carregar();}
-async function restaurar(){if(!confirm("Voltar todos os textos aos do plano?"))return;await api("/command/followup",{restaurarTextos:true});carregar();}
+  await api("/command/followup-auto",{ativo:on});carregar();}
+async function restaurar(){if(!confirm("Voltar todos os textos aos do plano?"))return;await api("/command/followup-auto",{restaurarTextos:true});carregar();}
 carregar();
 </script></body></html>
