@@ -165,6 +165,11 @@ Aponte SOMENTE problemas reais destas regras:
 7. Frase de acolhimento genérica ("compreendo sua preocupação", "sinto muito pelo ocorrido") ou mensagem longa demais para WhatsApp (mais de ~5 linhas).
 8. Envia ou promete enviar ela mesma decisões ou contatos de clientes (só pode OFERECER; quem envia é o Dr. Wesley).
 
+NUNCA aponte como problema as três mensagens obrigatórias do escritório (são autorizadas pelo Dr. Wesley e
+não são promessa de resultado): "${FRASES[0]}" / "${FRASES[1]}" / "${FRASES[2]}" (ou variações próximas),
+nem a oferta de provas, de que os honorários são no êxito, ou de que a procuração tem limite.
+Dizer que "o caso pode ter fundamento" ou "vale o Dr. Wesley analisar" também NÃO é promessa.
+
 ÚLTIMAS MENSAGENS:
 ${historico.slice(-8).map(m => `${m.role === 'client' ? 'Lead' : 'Escritório'}: ${m.body}`).join('\n')}
 
