@@ -66,6 +66,26 @@ const ENCERRAMENTOS_RE = [
 
 const CASE_TITLE_KEYWORDS = /processo|requerimento|apresentação|espólio|execução|embargos|ação\b|mandado|recurso|apelação|inventário|cumprimento de sentença|habilitação/i;
 
+// O pedido é só informação (pode ser respondido fora do horário)? Na dúvida, não.
+async function pedidoInformativo(texto: string): Promise<boolean> {
+  if (!texto || texto.length < 3) return false;
+  try {
+    const { criarMensagem } = await import('../ia');
+    const r = await criarMensagem('rapido', { max_tokens: 10, messages: [{ role: 'user', content:
+      `Mensagem de um cliente a um escritório de advocacia, fora do horário:\n"${texto.slice(0, 600)}"\n\n` +
+      `Responda SIM se o pedido for SÓ informativo: andamento do processo, confirmar se um documento chegou, endereço/horário/PIX/e-mail do escritório, ou dúvida simples e frequente. ` +
+      `Responda NAO se pedir o advogado, pergunta jurídica, proposta, honorários, reclamação, urgência, ou se não tiver certeza. Só SIM ou NAO.` }] });
+    const b = r.content[0];
+    return /^\s*SIM/i.test(b && b.type === 'text' ? b.text : '');
+  } catch { return false; }
+}
+
+// Pausa geral + Vendas em treino + contato é lead → libera só o rascunho de Vendas
+async function vendasTreinoComPausa(phone: string): Promise<boolean> {
+  if (posicaoVendas() !== 'treino') return false;
+  try { return ehDaFuncaoVendas(await fichaDoCRM(phone)); } catch { return false; }
+}
+
 // Termos do agro que a transcrição de áudio costuma ouvir errado
 export function corrigirTranscricao(t: string): string {
   return String(t || '')
@@ -226,7 +246,9 @@ export async function handleIncomingMessage(msg: IncomingMessage): Promise<void>
     // pausa só bloqueava o envio, e a fila de aprovação continuava enchendo com
     // respostas que nunca seriam usadas. A mensagem do cliente segue sendo salva
     // e exibida normalmente, acima.
-    if (sistemaPausado() && !calibrando) {
+    // Exceção: com a função Vendas em TREINO, leads continuam gerando rascunhos para
+    // aprovação (nada é enviado), para o Wesley avaliar a Iara mesmo com a pausa geral.
+    if (sistemaPausado() && !calibrando && !(await vendasTreinoComPausa(phone))) {
       console.log(`[orchestrator] secretária pausada — nenhum rascunho gerado para ${phone}`);
       return;
     }
@@ -333,7 +355,8 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
       console.log(`[orchestrator] ${phone} assumido/pausado durante a janela — nenhuma resposta`);
       return;
     }
-    if (sistemaPausado() && !calibrando) {
+    const soVendasTreino = sistemaPausado() && !calibrando;
+    if (soVendasTreino && !(await vendasTreinoComPausa(phone))) {
       console.log(`[orchestrator] secretária pausada durante a janela — nenhuma resposta para ${phone}`);
       return;
     }
@@ -385,22 +408,31 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
       return;
     }
 
+    // Leads (função Vendas ligada ou em treino) são atendidos 24 h: sem aviso de ausência (4.5)
+    const ehLeadVendas = posicaoVendas() !== 'desligada' && ehDaFuncaoVendas(await fichaDoCRM(phone).catch(() => null));
+
     // 6. Modo ausência (Wesley em férias / feriado)
     const ausenciaMsg = getSetting('ausencia_msg');
-    if (ausenciaMsg) {
+    if (ausenciaMsg && !ehLeadVendas) {
       // No máximo uma vez por dia por contato: antes, cada bloco de mensagens
       // do cliente recebia a mesma mensagem de férias de novo
       if (!jaEnviouTipo(phone, 'ausencia_ferias', 24)) {
         const enviado = await deliverOrQueue(phone, ausenciaMsg, 'ausência / férias', io, waName);
         if (enviado) registrarTipoEnviado(phone, 'ausencia_ferias');
       }
-      return;
+      // Em férias, o aviso vem junto da informação: pedido informativo segue sendo respondido (4.16)
+      if (!(await pedidoInformativo(textBody))) return;
     }
 
     // 7. Aviso de ausência: só quando REALMENTE fora do horário comercial (08:30-17h, seg-sex).
     // No máximo 1x por dia por contato. Entre 22h-7h (fora da janela de ausência) fica
     // pendente e é entregue automaticamente quando ela reabrir às 7h (cron ausencia.ts).
-    if (!isWithinBusinessHours() && !wesleyAtendendoAgora(phone)) {
+    // Fora do horário, pedido só informativo (andamento, documento, dados do escritório, dúvida
+    // frequente) é respondido normalmente; o resto recebe o aviso de ausência (4.16)
+    const foraDoHorario = !ehLeadVendas && !ausenciaMsg && !isWithinBusinessHours() && !wesleyAtendendoAgora(phone);
+    if (foraDoHorario && await pedidoInformativo(textBody)) {
+      console.log(`[orchestrator] fora do horário, pedido informativo de ${phone} — responde normalmente`);
+    } else if (foraDoHorario) {
       const hojeStr = new Date().toLocaleDateString('sv-SE', { timeZone: process.env.TZ_APP || 'America/Sao_Paulo' });
       const avisoAusencia = getAusenciaNotice(phone);
       if (avisoAusencia?.sent_date !== hojeStr) {
@@ -575,6 +607,11 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
         }
         console.error(`[vendas] sem rascunho para ${phone} — segue o fluxo da Secretária`);
       }
+    }
+    // Pausa geral com Vendas em treino: só os rascunhos de leads passam; a Secretária fica parada
+    if (soVendasTreino) {
+      console.log(`[orchestrator] pausa geral: ${phone} não recebe resposta da Secretária`);
+      return;
     }
 
     switch (classification.type as ClassificationType) {

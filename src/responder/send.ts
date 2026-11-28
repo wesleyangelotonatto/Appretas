@@ -113,6 +113,11 @@ export async function sendMessage(
     return { status: 'duplicado', corpo };
   }
   registrarEnvioProprio(phone, corpo);
+  // Ritmo humano (4.9): resposta automática a cliente espera um tempo proporcional ao
+  // tamanho do texto, como quem está digitando (1,5 s + ~25 ms por letra, até 8 s)
+  if (!interno && opts.assinar !== false && process.env.RITMO_HUMANO !== 'false') {
+    await new Promise(r => setTimeout(r, Math.min(8000, 1500 + corpo.length * 25)));
+  }
   try {
     await postarTexto(phone, corpo);
     return { status: 'enviado', corpo };
