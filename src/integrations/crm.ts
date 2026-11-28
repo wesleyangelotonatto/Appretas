@@ -26,6 +26,12 @@ export interface FichaCRM {
   ligacoesENotas: Array<{ em: number; tipo: string; titulo: string; detalhe: string | null; autor: string | null }>;
   sugestoesPendentes: string[];
   perfil?: string | null;
+  entrevista?: {
+    produto?: string;
+    respostas?: Record<string, { pergunta?: string; resposta: string; em?: number }>;
+    objecoes?: Array<{ codigo?: string; resumo: string; resposta?: string; superada?: boolean; em?: number }>;
+    indicios?: Record<string, 'sim' | 'nao' | 'nao_sabe'>;
+  } | null;
   notasIara?: Array<{ em: number; detalhe: string | null }>;
   envios?: Record<string, number>;
   tarefasAbertas?: string[];

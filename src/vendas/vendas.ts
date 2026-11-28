@@ -33,7 +33,7 @@ export function ehDaFuncaoVendas(ficha: FichaCRM | null, tipoClassificacao?: str
   return tipoClassificacao === 'LEAD_NOVO' && !(ficha?.etapa?.codigo === '11');
 }
 
-interface Produto { id: string; nome: string; origem?: string; textoCompleto?: string; ativo?: boolean }
+interface Produto { id: string; nome: string; origem?: string; textoCompleto?: string; ativo?: boolean; perguntas?: string[] }
 
 // Produto da conversa: o da ficha; senão, pela origem do anúncio ou pelas palavras
 function escolherProduto(ficha: FichaCRM | null, produtos: Produto[], texto: string): Produto | null {
@@ -98,6 +98,16 @@ export async function redigirVendas(phone: string, mensagemCliente: string, hist
       '\n\n=== PRODUTO AINDA NÃO IDENTIFICADO ===\nDescubra com uma pergunta simples qual é a situação (Proagro, seguro, dívida do financiamento, leilão da terra) antes de seguir o roteiro.',
   ].join('\n');
 
+  // Roteiro do produto: perguntas numeradas e o que já foi respondido (ficha > entrevista)
+  const perguntas = (produto?.perguntas || []).filter(Boolean);
+  const ent = ficha?.entrevista || null;
+  const respondidas = ent?.respostas || {};
+  const roteiro = perguntas.length ? `ROTEIRO DO PRODUTO (perguntas da entrevista):
+${perguntas.map((q, i) => { const r = respondidas[String(i + 1)]; return `${i + 1}. ${q}${r ? ` — JÁ RESPONDIDA: ${r.resposta}` : ' — FALTA'}`; }).join('\n')}
+Faça só a PRÓXIMA pergunta que falta, uma por vez e com naturalidade (pode pular a que já ficou clara na conversa). Não repita perguntas já respondidas.` : '';
+  const objAbertas = (ent?.objecoes || []).filter(o => !o.superada);
+  const objTxt = objAbertas.length ? `OBJEÇÕES EM ABERTO deste lead: ${objAbertas.map(o => `${o.codigo ? o.codigo + ' ' : ''}${o.resumo}`).join('; ')}` : '';
+
   const correcoes = getRecentCorrections(10);
   const hist = historico.length
     ? historico.map(m => `${m.role === 'client' ? 'Cliente' : m.role === 'iara' ? 'Iara' : 'Dr. Wesley'}: ${m.body}`).join('\n')
@@ -105,6 +115,8 @@ export async function redigirVendas(phone: string, mensagemCliente: string, hist
 
   const pedido = `FICHA DO LEAD NO CRM:
 ${resumoFicha(ficha)}
+${roteiro}
+${objTxt}
 
 HISTÓRICO DA CONVERSA:
 ${hist}
@@ -125,9 +137,12 @@ Responda SOMENTE com um JSON, sem markdown:
  "proximo_passo": "o próximo passo combinado ou a combinar, em poucas palavras",
  "regra": "qual parte do roteiro você usou (ex.: 'POP Proagro negado, pergunta 3', 'objeção OB-A', 'pergunta de conexão')",
  "provas_aceitas": true ou false (true só se o lead ACEITOU agora receber decisões de casos parecidos ou contato de clientes),
- "frase_obrigatoria": 1, 2, 3 ou null (qual das três mensagens obrigatórias esta resposta transmite)}`;
+ "frase_obrigatoria": 1, 2, 3 ou null (qual das três mensagens obrigatórias esta resposta transmite),
+ "respostas": {"<número da pergunta do roteiro>": "resumo curto do que o lead respondeu"} — só as que a conversa (inclusive a última mensagem) respondeu e ainda não estão como JÁ RESPONDIDA; {} se nenhuma,
+ "objecao": null ou {"codigo": "ex.: 5.1, 5.16, OB-C", "resumo": "a objeção com as palavras dele", "resposta": "como você respondeu", "superada": true ou false},
+ "indicios": {"<tese do produto>": "sim" | "nao" | "nao_sabe"} — só quando o lead deu informação sobre a tese (ex.: no leilão: intimação pessoal, valor da avaliação, bem de família, pequena propriedade); {} se nenhum}`;
 
-  const r = await criarMensagem('resposta', { max_tokens: 900, system, cacheSystem: true, messages: [{ role: 'user', content: pedido }] });
+  const r = await criarMensagem('resposta', { max_tokens: 1200, system, cacheSystem: true, messages: [{ role: 'user', content: pedido }] });
   const bloco = r.content[0];
   const texto = bloco && bloco.type === 'text' ? bloco.text : '';
   const incompleto = r.stop_reason !== 'end_turn' && r.stop_reason !== 'stop_sequence';
@@ -135,6 +150,19 @@ Responda SOMENTE com um JSON, sem markdown:
   try { j = JSON.parse((texto.match(/\{[\s\S]*\}/) || [texto])[0]); } catch { /* usa o texto puro */ }
   const mensagem = aplicarGlossario(String(j?.mensagem || texto || '').trim());
   if (!mensagem) return null;
+  // Registra o progresso da entrevista na ficha do CRM (não bloqueia a resposta)
+  if (j && !toque) {
+    const resp: Record<string, { pergunta: string; resposta: string }> = {};
+    Object.keys(j.respostas && typeof j.respostas === 'object' ? j.respostas : {}).forEach(k => {
+      const n = parseInt(k, 10); const v = String(j.respostas[k] || '').trim();
+      if (n >= 1 && n <= perguntas.length && v) resp[String(n)] = { pergunta: perguntas[n - 1], resposta: v };
+    });
+    const obj = j.objecao && typeof j.objecao === 'object' && j.objecao.resumo ? j.objecao : null;
+    const ind = j.indicios && typeof j.indicios === 'object' ? j.indicios : {};
+    if (Object.keys(resp).length || obj || Object.keys(ind).length || (produto && !ent?.produto)) {
+      registrarNaFicha(phone, { tipo: 'entrevista', entrevista: { produto: produto?.nome, respostas: resp, objecao: obj, indicios: ind } }).catch(() => {});
+    }
+  }
   const etapa = j?.etapa_sugerida && /^\d{2}$/.test(String(j.etapa_sugerida)) ? String(j.etapa_sugerida) : null;
   return {
     mensagem, etapaSugerida: etapa, proximoPasso: j?.proximo_passo || null, regra: j?.regra || null,
