@@ -1,3 +1,4 @@
+import { texto } from '../textos/textos';
 import { getAusenciasPendentes, marcarAusenciaEnviada, saveMessage, houveRespostaDeWesley } from '../memory/db';
 import { sendMessage } from '../responder/send';
 import { MSG_FORA_HORARIO } from '../persona';
@@ -26,13 +27,13 @@ export async function cronAusenciaPendentes(): Promise<void> {
         marcarAusenciaEnviada(phone, hojeStr); // limpa a pendência para não sair fora de contexto amanhã
         continue;
       }
-      const r = await sendMessage(phone, MSG_FORA_HORARIO);
+      const r = await sendMessage(phone, texto('ausencia.fora_horario', MSG_FORA_HORARIO));
       if (r.status !== 'enviado' && r.status !== 'na_fila') {
         console.log(`[cron-ausencia] não saiu (${r.status}) — ${phone} continua pendente`);
         continue;
       }
-      saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-      io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+      saveMessage(phone, 'iara', texto('ausencia.fora_horario', MSG_FORA_HORARIO));
+      io?.emit('message', { phone, role: 'iara', body: texto('ausencia.fora_horario', MSG_FORA_HORARIO), timestamp: Date.now() });
       marcarAusenciaEnviada(phone, hojeStr);
       enviados++;
     } catch (err) {

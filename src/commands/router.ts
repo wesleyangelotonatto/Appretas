@@ -745,6 +745,57 @@ commandRouter.post('/followup-auto', async (req, res) => {
   res.json({ ok: true, config: salvarConfigFollowup(c, (req as any).usuario?.login || 'painel') });
 });
 
+// ===== Menu Textos: todos os textos num lugar só =====
+async function crmProdutos(metodo: 'GET' | 'POST', caminho: string, corpo?: unknown) {
+  const url = process.env.CRM_URL, chave = process.env.CRM_API_KEY;
+  if (!url || !chave) throw new Error('CRM não configurado');
+  const r = await fetch(url.replace(/\/$/, '') + caminho, { method: metodo, headers: { 'x-api-key': chave, 'Content-Type': 'application/json' }, body: corpo ? JSON.stringify(corpo) : undefined, signal: AbortSignal.timeout(20000) });
+  const j: any = await r.json();
+  if (!r.ok || j.erro) throw new Error(j.erro || 'HTTP ' + r.status);
+  return j;
+}
+commandRouter.get('/textos', async (_req, res) => {
+  const { listar } = await import('../textos/textos');
+  const { configFollowup, ROTULO_ETAPA, TEXTOS_PADRAO } = await import('../vendas/cadencia');
+  let produtos: any[] = [], erroProdutos: string | null = null;
+  try { produtos = (await crmProdutos('GET', '/api/config/produtos')).produtos || []; } catch (e) { erroProdutos = (e as Error).message; }
+  const fu = configFollowup();
+  res.json({
+    itens: listar(),
+    followup: Object.keys(ROTULO_ETAPA).sort().map(e => ({ etapa: e, titulo: ROTULO_ETAPA[e], atual: fu.textos[e] || [], padrao: TEXTOS_PADRAO[e] || [] })),
+    produtos: produtos.map(p => ({ id: p.id, nome: p.nome, editado: !!p.editado, textoCompleto: p.textoCompleto, perguntas: p.perguntas || [], documentos: p.documentos || [] })),
+    erroProdutos,
+  });
+});
+commandRouter.post('/textos', async (req, res) => {
+  const b = req.body || {}, quem = (req as any).usuario?.login || 'painel';
+  try {
+    if (b.tipo === 'followup') {
+      const { salvarConfigFollowup, TEXTOS_PADRAO } = await import('../vendas/cadencia');
+      const e = String(b.etapa || '');
+      if (!TEXTOS_PADRAO[e]) return res.status(400).json({ erro: 'etapa inválida' });
+      const lista = b.restaurar ? TEXTOS_PADRAO[e] : (Array.isArray(b.toques) ? b.toques : []).map((t: any, i: number) => ({ dia: Math.max(0, Number(t.dia) || 0), texto: String(t.texto || '').slice(0, 1000), depois: TEXTOS_PADRAO[e][i]?.depois })).filter((t: any) => t.texto.trim());
+      salvarConfigFollowup({ textos: { [e]: lista } }, quem);
+      return res.json({ ok: true });
+    }
+    if (b.tipo === 'produto') {
+      const id = encodeURIComponent(String(b.id || ''));
+      if (b.restaurar) await crmProdutos('POST', '/api/config/produtos/' + id + '/restaurar', {});
+      else {
+        const campos: any = {};
+        if (typeof b.textoCompleto === 'string') campos.textoCompleto = b.textoCompleto;
+        if (typeof b.perguntas === 'string') campos.perguntas = b.perguntas.split('\n').map((x: string) => x.trim()).filter(Boolean);
+        if (typeof b.documentos === 'string') campos.documentos = b.documentos.split('\n').map((l: string) => { const c = l.split('|').map(x => x.trim()); return c[0] ? { documento: c[0], comoPedir: c[1] || null, prioridade: c[2] || 'Indispensável' } : null; }).filter(Boolean);
+        await crmProdutos('POST', '/api/config/produtos/' + id, campos);
+      }
+      return res.json({ ok: true });
+    }
+    const { salvar } = await import('../textos/textos');
+    const r = salvar(String(b.id || ''), b.restaurar ? null : String(b.valor ?? ''), quem);
+    res.status(r.erro ? 400 : 200).json(r);
+  } catch (err) { res.status(500).json({ erro: (err as Error).message }); }
+});
+
 commandRouter.get('/vendas/placar', async (_req, res) => {
   const { getDb } = await import('../memory/db');
   const linhas = getDb().prepare("SELECT tipo, contexto, texto_original, texto_final FROM treinamento WHERE tipo IN ('vendas','vendas_descartado')").all() as any[];

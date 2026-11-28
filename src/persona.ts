@@ -325,6 +325,8 @@ export function aplicarGlossario(texto: string): string {
   // a regra que remove autoapresentação apagava justamente a apresentação, que
   // nessa mensagem é obrigatória.
   if (TEXTOS_FIXOS.has(texto.trim()) || texto.trim().startsWith(MSG_INICIAL_PREFIXO)) return texto;
+  // Textos que o Wesley editou no menu Textos também saem exatamente como ele escreveu
+  try { if (require('./textos/textos').todosEditados().includes(texto.trim())) return texto; } catch { /* sem textos */ }
 
   // Se a IA sugeriu que o cliente ligue/contate o Dr. Wesley diretamente, descarta a
   // mensagem inteira e usa a resposta padrão segura (a resolução nunca é terceirizada ao cliente)

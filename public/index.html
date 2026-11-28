@@ -138,6 +138,7 @@
   <select id="sel-vendas" onchange="mudarVendas(this.value)" title="Função Vendas: desligada = a Iara não trata leads pelo funil; treino = redige e espera sua aprovação; ligada = responde os leads sozinha" style="margin-left:8px;padding:4px 6px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted)"><option value="desligada">Vendas: desligada</option><option value="treino">Vendas: treino</option><option value="ligada">Vendas: ligada</option></select> <a href="/vendas.html" style="font-size:11px;color:var(--text-muted)">placar do treino</a> <a href="/followup.html" style="font-size:11px;color:var(--text-muted)">follow-up automático</a> <a href="/manual.html" style="font-size:11px;color:var(--text-muted)">manual</a>
   <button id="btn-calibragem" onclick="toggleCalibragem()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Calibragem (nada sai): desligada</button>
   <button id="btn-all-approvals" onclick="verTodosRascunhos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--orange);background:#2d1a0a;color:var(--orange);cursor:pointer;display:none;">Respostas para aprovar (<span id="all-approvals-count">0</span>)</button>
+  <a href="/textos.html" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);color:var(--text);text-decoration:none">Textos</a>
   <button onclick="abrirRelatorios()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid #9b59b6;background:#1a0a2d;color:#9b59b6;cursor:pointer;">Relatórios diários</button>
   <button id="btn-perdidos" onclick="abrirPerdidos()" style="margin-left:8px;padding:4px 10px;font-size:11px;border-radius:6px;border:1px solid var(--border);background:var(--surface2);color:var(--text-muted);cursor:pointer;">Mensagens que não saíram (<span id="perdidos-count">0</span>)</button>
   <div class="integration-status">
@@ -820,7 +821,12 @@
     }
   }
 
-  function toggleAusencia() { document.getElementById('modal-ausencia').classList.add('open'); }
+  async function toggleAusencia() {
+    const ta = document.getElementById('ausencia-msg');
+    // Sugere o texto de férias do menu Textos quando o campo está vazio
+    if (!ta.value.trim()) { try { const j = await (await fetch('/command/textos')).json(); const t = (j.itens || []).find(i => i.id === 'ausencia.ferias'); if (t) ta.value = t.atual; } catch (e) {} }
+    document.getElementById('modal-ausencia').classList.add('open');
+  }
   function closeAusenciaModal() { document.getElementById('modal-ausencia').classList.remove('open'); }
 
   async function ativarAusencia() {

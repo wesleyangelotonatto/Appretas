@@ -18,6 +18,7 @@ import {
 } from '../persona';
 import { transcribeAudio } from '../classifier/groq';
 import { detectAppointment } from './appointmentDetector';
+import { texto, MSG_ASSISTENTE_VIRTUAL_PADRAO } from '../textos/textos';
 import { posicaoVendas, ehDaFuncaoVendas, redigirVendas, revisar, atualizarPerfilENota } from '../vendas/vendas';
 import { fichaDoCRM, registrarNaFicha } from '../integrations/crm';
 
@@ -408,10 +409,10 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
           // sendo processada ao mesmo tempo, só uma delas ganha o direito de enviar
           if (reivindicarAusencia(phone, hojeStr)) {
             try {
-              const r = await sendMessage(phone, MSG_FORA_HORARIO);
+              const r = await sendMessage(phone, texto('ausencia.fora_horario', MSG_FORA_HORARIO));
               if (saiu(r)) {
-                saveMessage(phone, 'iara', MSG_FORA_HORARIO);
-                io?.emit('message', { phone, role: 'iara', body: MSG_FORA_HORARIO, timestamp: Date.now() });
+                saveMessage(phone, 'iara', texto('ausencia.fora_horario', MSG_FORA_HORARIO));
+                io?.emit('message', { phone, role: 'iara', body: texto('ausencia.fora_horario', MSG_FORA_HORARIO), timestamp: Date.now() });
               } else {
                 liberarAusencia(phone); // não saiu (pausa/calibragem): não conta como enviado
               }
@@ -433,7 +434,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     const isUrgent = /(?<![\p{L}])(urgente|urgência|preso|presa|mandado|busca e apreensão|acidente|socorro|emergência)(?![\p{L}])/iu.test(textBody);
     if (isUrgent) {
       io?.emit('urgent_alert', { phone, body: textBody, timestamp: Date.now() });
-      await deliverOrQueue(phone, MSG_URGENCIA_AGUARDAR, 'urgência', io, waName);
+      await deliverOrQueue(phone, texto('fixa.urgencia', MSG_URGENCIA_AGUARDAR), 'urgência', io, waName);
       return;
     }
 
@@ -466,7 +467,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     const pedidoAdvogado = /(falar|fala|quero|preciso|chama|passa).*(advogado|doutor|dr\.?|wesley)/i.test(textBody);
 
     if (recusaSecretaria || pedidoAdvogado) {
-      const msgResposta = recusaSecretaria ? MSG_RECUSA_SECRETARIA(genero) : MSG_PEDIR_ADVOGADO;
+      const msgResposta = recusaSecretaria ? MSG_RECUSA_SECRETARIA(genero) : texto('fixa.pedir_advogado', MSG_PEDIR_ADVOGADO);
       io?.emit('alert', {
         phone,
         type: 'pedido_advogado',
@@ -486,14 +487,14 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
     // 12a. "Você é robô?" — nunca nega ser assistente virtual (4.3). Resposta fixa.
     if (PERGUNTA_ROBO.test(textBody) && !jaEnviouTipo(phone, 'assistente_virtual', 24)) {
       registrarTipoEnviado(phone, 'assistente_virtual');
-      await deliverOrQueue(phone, MSG_ASSISTENTE_VIRTUAL, 'pergunta_assistente_virtual', io, contact?.name);
+      await deliverOrQueue(phone, texto('fixa.assistente_virtual', MSG_ASSISTENTE_VIRTUAL_PADRAO), 'pergunta_assistente_virtual', io, contact?.name);
       return;
     }
 
     const pedidoPix = PEDIDO_PIX.test(textBody);
     const pedidoEmail = !pedidoPix && PEDIDO_EMAIL.test(textBody);
     if (pedidoPix || pedidoEmail) {
-      await deliverOrQueue(phone, pedidoPix ? MSG_PIX : MSG_EMAIL, pedidoPix ? 'pedido_pix' : 'pedido_email', io, contact?.name);
+      await deliverOrQueue(phone, pedidoPix ? texto('fixa.pix', MSG_PIX) : texto('fixa.email', MSG_EMAIL), pedidoPix ? 'pedido_pix' : 'pedido_email', io, contact?.name);
       return;
     }
 
@@ -670,7 +671,7 @@ async function responderConversa(phone: string, textBody: string, io: any, waNam
             console.log(`[orchestrator] ${phone} — aviso de cunho pessoal já foi dado, não repete`);
             break;
           }
-          draft = MSG_AMIGO;
+          draft = texto('fixa.amigo', MSG_AMIGO);
           registrarTipoEnviado(phone, 'amigo_pessoal');
           io?.emit('alert', { phone, type: 'amigo', message: `Mensagem pessoal de ${contact?.name || phone}`, priority: 'low' });
           break;
@@ -767,7 +768,6 @@ const PERGUNTA_ROBO = new RegExp(
   String.raw`|(?:(?:[eé]|eh)\s+(?:um\s+)?(?:rob[oô]|bot)\s*\?)` +
   String.raw`|(?:(?:falando|conversando)\s+com\s+(?:um\s+|uma\s+)?(?:rob[oô]|bot|m[aá]quina|ia\b|intelig[eê]ncia\s+artificial|pessoa\s+de\s+verdade))`,
   'i');
-const MSG_ASSISTENTE_VIRTUAL = 'Sou a Iara, assistente virtual do escritório do Dr. Wesley. Ele faz questão de que ninguém fique esperando, por isso respondo na hora, a qualquer horário. Tudo o que você me contar vai direto para ele e a equipe analisarem, e quando for preciso, ele mesmo te liga.';
 
 const VERBO_PEDIR = String.raw`(?:me\s+)?(?:passa|passe|manda|mande|envia|envie|fala|fale|informa|informe|da|dá|de|dê)`;
 const PEDIDO_PIX = new RegExp(

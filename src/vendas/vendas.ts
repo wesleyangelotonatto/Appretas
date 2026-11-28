@@ -9,6 +9,7 @@ import { getSetting, setSetting, getRecentCorrections, getDb } from '../memory/d
 import { fichaDoCRM, configDoCRM, FichaCRM, registrarNaFicha } from '../integrations/crm';
 import { PRINCIPIO, CONEXAO, QUEMFALA, OBJECOES, COMPORTAMENTO, COMANDO, COMUM } from './textosPlano';
 import type { Genero } from '../persona';
+import { texto as textoEditavel } from '../textos/textos';
 
 export type PosicaoVendas = 'desligada' | 'treino' | 'ligada';
 
@@ -91,7 +92,8 @@ export async function redigirVendas(phone: string, mensagemCliente: string, hist
   const system = [
     buildSystemPrompt(genero),
     '\n\n=== FUNÇÃO VENDAS (siga estas orientações nesta conversa) ===\n',
-    COMANDO, PRINCIPIO, CONEXAO, QUEMFALA, COMPORTAMENTO, OBJECOES, COMUM,
+    textoEditavel('vendas.comando', COMANDO), textoEditavel('vendas.principio', PRINCIPIO), textoEditavel('vendas.conexao', CONEXAO), textoEditavel('vendas.quemfala', QUEMFALA),
+    textoEditavel('vendas.comportamento', COMPORTAMENTO), textoEditavel('vendas.objecoes', OBJECOES), textoEditavel('vendas.comum', COMUM),
     produto ? `\n\n=== POP DO PRODUTO: ${produto.nome} ===\n${produto.textoCompleto || ''}` :
       '\n\n=== PRODUTO AINDA NÃO IDENTIFICADO ===\nDescubra com uma pergunta simples qual é a situação (Proagro, seguro, dívida do financiamento, leilão da terra) antes de seguir o roteiro.',
   ].join('\n');

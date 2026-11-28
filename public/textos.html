@@ -1,0 +1,65 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Textos da Iara</title>
+<style>
+:root{--bg:#0f1419;--card:#1a2129;--borda:#2d3748;--txt:#e6e6e6;--mut:#a0aec0;--az:#63b3ed;--vd:#68d391;--am:#f6ad55}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;font-size:14px}
+header{display:flex;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--borda);flex-wrap:wrap}header h1{font-size:18px;margin:0}
+a{color:var(--az);text-decoration:none}.mut{color:var(--mut);font-size:12px}
+.layout{display:grid;grid-template-columns:270px 1fr;min-height:calc(100vh - 50px)}@media(max-width:860px){.layout{grid-template-columns:1fr}}
+nav{border-right:1px solid var(--borda);padding:10px;overflow-y:auto}
+nav details{margin-bottom:4px}nav summary{cursor:pointer;font-weight:600;padding:7px 6px;border-radius:6px}nav summary:hover{background:var(--card)}
+nav .item{display:block;padding:6px 8px 6px 18px;border-radius:6px;cursor:pointer;color:#cbd5e0;font-size:13px}nav .item:hover,nav .item.sel{background:#2b6cb0;color:#fff}
+nav .sub{padding-left:10px}.ed{color:var(--am);font-size:11px}
+main{padding:16px;min-width:0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:860px){.cols{grid-template-columns:1fr}}
+.col h3{font-size:13px;margin:0 0 6px;color:var(--mut)}
+.atual{background:var(--card);border:1px solid var(--borda);border-radius:8px;padding:10px;white-space:pre-wrap;min-height:300px;max-height:65vh;overflow-y:auto;font-size:13px;line-height:1.5}
+textarea{width:100%;min-height:300px;height:65vh;background:#0b0f14;color:var(--txt);border:1px solid #3182ce;border-radius:8px;padding:10px;font:13px/1.5 system-ui,sans-serif;resize:vertical}
+button{background:#3182ce;color:#fff;border:0;border-radius:6px;padding:9px 16px;cursor:pointer;font:inherit;margin:10px 8px 0 0}button.sec{background:#4a5568}
+.vazio{color:var(--mut);padding:30px}
+</style></head><body>
+<header><a href="/">← Painel da Iara</a><h1>Textos</h1><span class="mut">Todos os textos que a Iara usa. À esquerda, como está hoje; à direita, o que o senhor quer que fique.</span></header>
+<div class="layout"><nav id="menu">Carregando…</nav><main id="area"><div class="vazio">Escolha um texto no menu.</div></main></div>
+<script>
+var D=null,SEL=null;
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+async function api(u,b){var r=await fetch(u,b?{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}:{});if(r.status===401){location.href="/login";throw 0;}return r.json();}
+function fuTexto(l){return (l||[]).map(function(t){return "Dia "+t.dia+" | "+t.texto;}).join("\n\n");}
+function lerFu(txt){return txt.split(/\n\s*\n/).map(function(b){var m=b.trim().match(/^Dia\s*(\d+)\s*\|\s*([\s\S]+)$/i);return m?{dia:+m[1],texto:m[2].trim()}:null;}).filter(Boolean);}
+function docsTexto(l){return (l||[]).map(function(d){return [d.documento,d.comoPedir||"",d.prioridade||""].join(" | ");}).join("\n");}
+// Cada entrada do menu: {chave, titulo, explica, atual, padrao, editado, salvar(valor), restaurar()}
+function entradas(){var E=[];
+  var g=function(nome){return E.push({grupo:nome,itens:[]}),E[E.length-1];};
+  var fu=g("Frases do follow-up");D.followup.forEach(function(f){var mudou=fuTexto(f.atual)!==fuTexto(f.padrao);fu.itens.push({chave:"fu."+f.etapa,titulo:f.titulo,editado:mudou,
+    explica:"Uma mensagem por bloco, no formato \"Dia N | texto\", separadas por uma linha em branco. Lacunas: {nome} {produto} {documento} {ponto} {data}.",
+    atual:fuTexto(f.atual),salvar:function(v){return api("/command/textos",{tipo:"followup",etapa:f.etapa,toques:lerFu(v)});},restaurar:function(){return api("/command/textos",{tipo:"followup",etapa:f.etapa,restaurar:true});}});});
+  var pr=g("Roteiro de cada produto");
+  if(D.erroProdutos)pr.itens.push({chave:"pr.erro",titulo:"(CRM não respondeu)",explica:D.erroProdutos,atual:"",somenteLeitura:true});
+  D.produtos.forEach(function(p){var sub={sub:p.nome,editado:p.editado,itens:[]};pr.itens.push(sub);
+    var salvar=function(campo){return function(v){var b={tipo:"produto",id:p.id};b[campo]=v;return api("/command/textos",b);};};
+    var rest=function(){return api("/command/textos",{tipo:"produto",id:p.id,restaurar:true});};
+    sub.itens.push({chave:"pr."+p.id+".rot",titulo:"Roteiro completo",explica:"Regras, viabilidade, perguntas, documentos, objeções e teses do produto. A Iara segue este texto nas conversas.",atual:p.textoCompleto,salvar:salvar("textoCompleto"),restaurar:rest,editado:p.editado});
+    sub.itens.push({chave:"pr."+p.id+".per",titulo:"Perguntas (em ordem)",explica:"Uma pergunta por linha.",atual:(p.perguntas||[]).join("\n"),salvar:salvar("perguntas"),restaurar:rest});
+    sub.itens.push({chave:"pr."+p.id+".doc",titulo:"Documentos",explica:"Um por linha: documento | como pedir ao cliente | prioridade (Indispensável ou Desejável). Usado na conferência de documentos do CRM.",atual:docsTexto(p.documentos),salvar:salvar("documentos"),restaurar:rest});});
+  var grupos={};D.itens.forEach(function(i){(grupos[i.grupo]=grupos[i.grupo]||[]).push(i);});
+  ["Aviso de férias e ausência","Comandos de vendas","Quebra de objeções","Boas-vindas","Pedido de avaliação","Mensagens fixas"].forEach(function(n){if(!grupos[n])return;var x=g(n);
+    grupos[n].forEach(function(i){x.itens.push({chave:i.id,titulo:i.titulo,explica:i.explica+(i.emUso?"":" (ainda não é enviado automaticamente)"),atual:i.atual,editado:i.editado,
+      salvar:function(v){return api("/command/textos",{id:i.id,valor:v});},restaurar:function(){return api("/command/textos",{id:i.id,restaurar:true});}});});});
+  return E;}
+var MAPA={};
+function menu(){var E=entradas();MAPA={};
+  var it=function(x){MAPA[x.chave]=x;return '<span class="item'+(SEL===x.chave?" sel":"")+'" onclick="abrir(\''+x.chave+'\')">'+esc(x.titulo)+(x.editado?' <span class="ed">editado</span>':'')+'</span>';};
+  document.getElementById("menu").innerHTML=E.map(function(g){return '<details'+(g.itens.some(function(x){return x.chave===SEL||(x.itens||[]).some(function(y){return y.chave===SEL;});})?" open":"")+'><summary>'+esc(g.grupo)+'</summary>'+
+    g.itens.map(function(x){return x.sub?'<details class="sub"'+((x.itens||[]).some(function(y){return y.chave===SEL;})?" open":"")+'><summary style="font-weight:500">'+esc(x.sub)+(x.editado?' <span class="ed">editado</span>':'')+'</summary>'+x.itens.map(it).join("")+'</details>':it(x);}).join("")+'</details>';}).join("");}
+function abrir(chave){SEL=chave;var x=MAPA[chave];menu();
+  document.getElementById("area").innerHTML='<h2 style="margin:0 0 4px;font-size:17px">'+esc(x.titulo)+'</h2><div class="mut" style="margin-bottom:10px">'+esc(x.explica||"")+'</div>'+
+   '<div class="cols"><div class="col"><h3>Como é hoje (em uso)</h3><div class="atual">'+esc(x.atual)+'</div></div>'+
+   '<div class="col"><h3>Texto a editar</h3><textarea id="ed">'+esc(x.atual)+'</textarea></div></div>'+
+   (x.somenteLeitura?'':'<button onclick="salvar()">Salvar</button><button class="sec" onclick="restaurar()">Voltar ao texto original</button> <span id="msg" class="mut"></span>');}
+async function salvar(){var x=MAPA[SEL],v=document.getElementById("ed").value,m=document.getElementById("msg");
+  if(SEL.indexOf("fu.")===0&&!lerFu(v).length){alert("Use o formato \"Dia N | texto\", uma mensagem por bloco.");return;}
+  m.textContent="Salvando…";var r=await x.salvar(v);if(r.erro){m.textContent="Erro: "+r.erro;return;}await carregar();abrir(SEL);document.getElementById("msg").textContent="Salvo. A Iara já usa o texto novo.";}
+async function restaurar(){if(!confirm("Voltar este texto ao original?"))return;var r=await MAPA[SEL].restaurar();if(r.erro){alert(r.erro);return;}await carregar();abrir(SEL);document.getElementById("msg").textContent="Voltou ao original.";}
+async function carregar(){D=await api("/command/textos");menu();}
+carregar();
+</script></body></html>
